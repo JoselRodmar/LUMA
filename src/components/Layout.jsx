@@ -28,17 +28,20 @@ const menu = [
     ruta: "/",
     icono: "✨",
   },
-
   {
     nombre: "Ingresos",
     ruta: "/ingresos",
     icono: "💰",
   },
-
   {
     nombre: "Gastos",
     ruta: "/gastos",
     icono: "🧾",
+  },
+  {
+    nombre: "Apartados",
+    ruta: "/apartados",
+    icono: "🎯",
   },
 ];
 
@@ -74,7 +77,8 @@ export default function Layout({
             sx={{
               fontWeight: 800,
               fontSize: 26,
-              letterSpacing: "-1px",
+              letterSpacing:
+                "-1px",
               color: "#6D5DFB",
             }}
           >
@@ -84,7 +88,8 @@ export default function Layout({
           <Typography
             sx={{
               fontSize: 11,
-              color: "text.secondary",
+              color:
+                "text.secondary",
               letterSpacing: 1,
             }}
           >
@@ -94,66 +99,82 @@ export default function Layout({
       </Box>
 
       <List>
-        {menu.map((item) => {
-          const activo =
-            location.pathname ===
-            item.ruta;
+        {menu.map(
+          (item) => {
+            const activo =
+              location.pathname ===
+              item.ruta;
 
-          return (
-            <ListItem
-              key={item.ruta}
-              disablePadding
-              sx={{ mb: 0.7 }}
-            >
-              <ListItemButton
-                component={Link}
-                to={item.ruta}
-                onClick={() =>
-                  setMobileOpen(false)
+            return (
+              <ListItem
+                key={
+                  item.ruta
                 }
+                disablePadding
                 sx={{
-                  borderRadius: "14px",
-
-                  backgroundColor:
-                    activo
-                      ? "#EEEAFE"
-                      : "transparent",
-
-                  color:
-                    activo
-                      ? "#6D5DFB"
-                      : "#565D6D",
-
-                  "&:hover": {
-                    backgroundColor:
-                      "#F3F1FF",
-                  },
+                  mb: 0.7,
                 }}
               >
-                <Box
+                <ListItemButton
+                  component={
+                    Link
+                  }
+                  to={
+                    item.ruta
+                  }
+                  onClick={() =>
+                    setMobileOpen(
+                      false
+                    )
+                  }
                   sx={{
-                    width: 36,
-                    fontSize: 20,
+                    borderRadius:
+                      "14px",
+
+                    backgroundColor:
+                      activo
+                        ? "#EEEAFE"
+                        : "transparent",
+
+                    color:
+                      activo
+                        ? "#6D5DFB"
+                        : "#565D6D",
+
+                    "&:hover":
+                      {
+                        backgroundColor:
+                          "#F3F1FF",
+                      },
                   }}
                 >
-                  {item.icono}
-                </Box>
+                  <Box
+                    sx={{
+                      width: 36,
+                      fontSize: 20,
+                    }}
+                  >
+                    {
+                      item.icono
+                    }
+                  </Box>
 
-                <ListItemText
-                  primary={
-                    item.nombre
-                  }
-                  primaryTypographyProps={{
-                    fontWeight:
-                      activo
-                        ? 700
-                        : 500,
-                  }}
-                />
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
+                  <ListItemText
+                    primary={
+                      item.nombre
+                    }
+                    primaryTypographyProps={{
+                      fontWeight:
+                        activo
+                          ? 700
+                          : 500,
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          }
+        )}
       </List>
     </Box>
   );
@@ -162,7 +183,8 @@ export default function Layout({
     <Box
       sx={{
         display: "flex",
-        minHeight: "100vh",
+        minHeight:
+          "100vh",
       }}
     >
       <AppBar
@@ -176,7 +198,8 @@ export default function Layout({
           backgroundColor:
             "rgba(255,255,255,.95)",
 
-          color: "#1E2330",
+          color:
+            "#1E2330",
 
           borderBottom:
             "1px solid #EEEFF3",
@@ -185,7 +208,9 @@ export default function Layout({
         <Toolbar>
           <IconButton
             onClick={() =>
-              setMobileOpen(true)
+              setMobileOpen(
+                true
+              )
             }
           >
             ☰
@@ -195,7 +220,8 @@ export default function Layout({
             sx={{
               ml: 1,
               fontWeight: 800,
-              color: "#6D5DFB",
+              color:
+                "#6D5DFB",
             }}
           >
             LUMA
@@ -219,10 +245,13 @@ export default function Layout({
           variant="temporary"
           open={mobileOpen}
           onClose={() =>
-            setMobileOpen(false)
+            setMobileOpen(
+              false
+            )
           }
           ModalProps={{
-            keepMounted: true,
+            keepMounted:
+              true,
           }}
           sx={{
             display: {
@@ -282,7 +311,8 @@ export default function Layout({
           backgroundColor:
             "#F6F7FB",
 
-          minHeight: "100vh",
+          minHeight:
+            "100vh",
 
           pt: {
             xs: 10,

@@ -1,5 +1,6 @@
 ﻿import {
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -17,6 +18,19 @@ import {
 } from "@mui/material";
 
 import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+import {
   db,
 } from "../services/firebase";
 
@@ -25,6 +39,10 @@ import {
   formatearDinero,
 } from "../utils/frecuencia";
 
+import {
+  calcularApartadoSemanal,
+} from "../utils/apartados";
+
 import SummaryCard from "../components/SummaryCard";
 
 const crearResumen = () => ({
@@ -32,20 +50,35 @@ const crearResumen = () => ({
     ingresos: 0,
     gastosFijos: 0,
     gastosVariables: 0,
+    apartados: 0,
   },
 
   Consultorio: {
     ingresos: 0,
     gastosFijos: 0,
     gastosVariables: 0,
+    apartados: 0,
   },
 
   Extras: {
     ingresos: 0,
     gastosFijos: 0,
     gastosVariables: 0,
+    apartados: 0,
   },
 });
+
+const lugares = [
+  "Casa",
+  "Consultorio",
+  "Extras",
+];
+
+const coloresEspacios = [
+  "#6D5DFB",
+  "#10B981",
+  "#F59E0B",
+];
 
 export default function Dashboard() {
   const [
@@ -149,6 +182,45 @@ export default function Dashboard() {
             }
           );
 
+          const apartadosSnap =
+            await getDocs(
+              collection(
+                db,
+                "apartados"
+              )
+            );
+
+          apartadosSnap.forEach(
+            (documento) => {
+              const data =
+                documento.data();
+
+              if (
+                !nuevoResumen[
+                  data.lugar
+                ]
+              ) {
+                return;
+              }
+
+              if (
+                data.activo ===
+                false
+              ) {
+                return;
+              }
+
+              nuevoResumen[
+                data.lugar
+              ].apartados +=
+                calcularApartadoSemanal(
+                  data.montoObjetivo,
+                  data.ahorrado,
+                  data.fechaVencimiento
+                );
+            }
+          );
+
           setResumen(
             nuevoResumen
           );
@@ -158,7 +230,7 @@ export default function Dashboard() {
           console.error(err);
 
           setError(
-            "No fue posible conectar con Firebase. Revisa la configuración."
+            "No fue posible cargar la información financiera."
           );
         } finally {
           setLoading(false);
@@ -168,46 +240,115 @@ export default function Dashboard() {
     cargarDatos();
   }, []);
 
-  const lugares = [
-    "Casa",
-    "Consultorio",
-    "Extras",
-  ];
-
   const totalIngresos =
-    Object.values(
-      resumen
-    ).reduce(
-      (acc, item) =>
-        acc +
-        item.ingresos,
-      0
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.ingresos,
+          0
+        ),
+      [resumen]
     );
 
   const totalGastos =
-    Object.values(
-      resumen
-    ).reduce(
-      (acc, item) =>
-        acc +
-        item.gastosFijos +
-        item.gastosVariables,
-      0
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.gastosFijos +
+            item.gastosVariables,
+          0
+        ),
+      [resumen]
     );
 
-  const disponibleGeneral =
+  const totalApartados =
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.apartados,
+          0
+        ),
+      [resumen]
+    );
+
+  const disponible =
     totalIngresos -
     totalGastos;
 
-  const porcentajeGasto =
+  const disponibleReal =
+    disponible -
+    totalApartados;
+
+  const porcentajeComprometido =
     totalIngresos > 0
       ? Math.min(
           100,
-          (totalGastos /
+          ((totalGastos +
+            totalApartados) /
             totalIngresos) *
             100
         )
       : 0;
+
+  const datosComparativa =
+    lugares.map(
+      (lugar) => {
+        const info =
+          resumen[lugar];
+
+        return {
+          nombre: lugar,
+
+          ingresos:
+            Math.round(
+              info.ingresos
+            ),
+
+          gastos:
+            Math.round(
+              info.gastosFijos +
+                info.gastosVariables
+            ),
+
+          apartados:
+            Math.round(
+              info.apartados
+            ),
+        };
+      }
+    );
+
+  const datosDistribucion =
+    lugares
+      .map(
+        (lugar) => ({
+          name: lugar,
+
+          value:
+            Math.round(
+              resumen[lugar]
+                .gastosFijos +
+                resumen[lugar]
+                  .gastosVariables
+            ),
+        })
+      )
+      .filter(
+        (item) =>
+          item.value > 0
+      );
 
   if (loading) {
     return (
@@ -249,6 +390,7 @@ export default function Dashboard() {
             },
 
             fontWeight: 800,
+
             letterSpacing:
               "-1.2px",
           }}
@@ -256,44 +398,19 @@ export default function Dashboard() {
           Hola 👋
         </Typography>
 
-        <Typography
-          color="text.secondary"
-        >
+        <Typography color="text.secondary">
           Este es tu panorama
           financiero semanal.
         </Typography>
       </Box>
 
       {error && (
-        <Card
-          sx={{
-            mb: 3,
-            borderRadius:
-              "18px",
-          }}
+        <Typography
+          color="error"
+          sx={{ mb: 3 }}
         >
-          <CardContent>
-            <Typography
-              color="error"
-              fontWeight={600}
-            >
-              {error}
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-              sx={{ mt: 1 }}
-            >
-              La interfaz de
-              LUMA ya está
-              funcionando. Solo
-              falta colocar el
-              firebaseConfig
-              original.
-            </Typography>
-          </CardContent>
-        </Card>
+          {error}
+        </Typography>
       )}
 
       <Box
@@ -304,9 +421,9 @@ export default function Dashboard() {
             {
               xs: "1fr",
               sm:
-                "repeat(2, 1fr)",
-              lg:
-                "repeat(3, 1fr)",
+                "repeat(2,1fr)",
+              xl:
+                "repeat(4,1fr)",
             },
 
           gap: 2.5,
@@ -333,11 +450,25 @@ export default function Dashboard() {
         />
 
         <SummaryCard
-          title="Disponible"
+          title="Apartados"
           value={
-            disponibleGeneral
+            totalApartados
           }
-          color="#6755D9"
+          color="#D97706"
+          background="#FFF7E7"
+          icon="🎯"
+        />
+
+        <SummaryCard
+          title="Disponible real"
+          value={
+            disponibleReal
+          }
+          color={
+            disponibleReal >= 0
+              ? "#6755D9"
+              : "#EF4444"
+          }
           background="#F1EEFF"
           icon="✨"
         />
@@ -345,82 +476,336 @@ export default function Dashboard() {
 
       <Card
         sx={{
+          mt: 3,
+
           borderRadius:
             "24px",
-          mt: 3,
+
+          background:
+            disponibleReal >= 0
+              ? "linear-gradient(135deg, #FFFFFF 0%, #F5F2FF 100%)"
+              : "linear-gradient(135deg, #FFFFFF 0%, #FFF1F1 100%)",
         }}
       >
         <CardContent
           sx={{ p: 3 }}
         >
           <Typography
+            color="text.secondary"
+            fontSize={13}
+            fontWeight={700}
+          >
+            TU DINERO REALMENTE
+            DISPONIBLE
+          </Typography>
+
+          <Typography
             sx={{
-              fontWeight: 700,
-              fontSize: 18,
+              fontSize: {
+                xs: 34,
+                md: 44,
+              },
+
+              fontWeight: 900,
+
+              color:
+                disponibleReal >=
+                0
+                  ? "#6755D9"
+                  : "#EF4444",
+
+              mt: 0.5,
             }}
+          >
+            {formatearDinero(
+              disponibleReal
+            )}
+          </Typography>
+
+          <Typography
+            color="text.secondary"
+            sx={{
+              maxWidth: 700,
+              mt: 1,
+            }}
+          >
+            Este monto ya
+            descuenta tus gastos
+            actuales y lo que
+            deberías reservar esta
+            semana para compromisos
+            futuros.
+          </Typography>
+        </CardContent>
+      </Card>
+
+      <Box
+        sx={{
+          display: "grid",
+
+          gridTemplateColumns:
+            {
+              xs: "1fr",
+              lg:
+                "1.5fr 1fr",
+            },
+
+          gap: 2.5,
+          mt: 3,
+        }}
+      >
+        <Card
+          sx={{
+            borderRadius:
+              "24px",
+          }}
+        >
+          <CardContent
+            sx={{ p: 3 }}
+          >
+            <Typography
+              fontWeight={800}
+              fontSize={19}
+            >
+              Flujo por espacio
+            </Typography>
+
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+              sx={{ mt: 0.5 }}
+            >
+              Ingresos, gastos y
+              compromisos futuros.
+            </Typography>
+
+            <Box
+              sx={{
+                width: "100%",
+                height: 330,
+                mt: 3,
+              }}
+            >
+              <ResponsiveContainer>
+                <BarChart
+                  data={
+                    datosComparativa
+                  }
+                >
+                  <CartesianGrid
+                    strokeDasharray="4 4"
+                    vertical={false}
+                  />
+
+                  <XAxis
+                    dataKey="nombre"
+                  />
+
+                  <YAxis />
+
+                  <Tooltip
+                    formatter={(
+                      value
+                    ) =>
+                      formatearDinero(
+                        value
+                      )
+                    }
+                  />
+
+                  <Bar
+                    dataKey="ingresos"
+                    name="Ingresos"
+                    fill="#10B981"
+                    radius={[
+                      8,
+                      8,
+                      0,
+                      0,
+                    ]}
+                  />
+
+                  <Bar
+                    dataKey="gastos"
+                    name="Gastos"
+                    fill="#EF4444"
+                    radius={[
+                      8,
+                      8,
+                      0,
+                      0,
+                    ]}
+                  />
+
+                  <Bar
+                    dataKey="apartados"
+                    name="Apartados"
+                    fill="#F59E0B"
+                    radius={[
+                      8,
+                      8,
+                      0,
+                      0,
+                    ]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          </CardContent>
+        </Card>
+
+        <Card
+          sx={{
+            borderRadius:
+              "24px",
+          }}
+        >
+          <CardContent
+            sx={{ p: 3 }}
+          >
+            <Typography
+              fontWeight={800}
+              fontSize={19}
+            >
+              Distribución de gastos
+            </Typography>
+
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+              sx={{ mt: 0.5 }}
+            >
+              Dónde se concentra tu
+              gasto semanal.
+            </Typography>
+
+            <Box
+              sx={{
+                width: "100%",
+                height: 280,
+                mt: 2,
+              }}
+            >
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={
+                      datosDistribucion
+                    }
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={58}
+                    outerRadius={90}
+                    paddingAngle={4}
+                  >
+                    {datosDistribucion.map(
+                      (
+                        item,
+                        index
+                      ) => (
+                        <Cell
+                          key={
+                            item.name
+                          }
+                          fill={
+                            coloresEspacios[
+                              index %
+                                coloresEspacios.length
+                            ]
+                          }
+                        />
+                      )
+                    )}
+                  </Pie>
+
+                  <Tooltip
+                    formatter={(
+                      value
+                    ) =>
+                      formatearDinero(
+                        value
+                      )
+                    }
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+
+      <Card
+        sx={{
+          mt: 3,
+          borderRadius:
+            "24px",
+        }}
+      >
+        <CardContent
+          sx={{ p: 3 }}
+        >
+          <Typography
+            fontWeight={800}
+            fontSize={19}
           >
             Salud financiera
           </Typography>
 
           <Typography
-            sx={{
-              color:
-                "text.secondary",
-              mt: 0.5,
-              fontSize: 14,
-            }}
+            color="text.secondary"
+            fontSize={14}
+            sx={{ mt: 0.5 }}
           >
-            {disponibleGeneral >=
-            0
-              ? "Tus finanzas se mantienen dentro de un rango saludable."
-              : "Tus gastos actuales superan tus ingresos semanales."}
+            {disponibleReal >= 0
+              ? "Tus ingresos alcanzan para cubrir tus gastos y tus apartados actuales."
+              : "Tus compromisos actuales requieren más dinero del que generan tus ingresos semanales."}
           </Typography>
 
           <Box
             sx={{
+              height: 12,
               mt: 3,
+
               backgroundColor:
                 "#ECEEF3",
+
               borderRadius: 20,
+
               overflow:
                 "hidden",
-              height: 12,
             }}
           >
             <Box
               sx={{
+                width:
+                  `${porcentajeComprometido}%`,
+
                 height:
                   "100%",
 
-                width:
-                  `${porcentajeGasto}%`,
-
-                backgroundColor:
-                  porcentajeGasto >
-                  85
-                    ? "#EF4444"
-                    : porcentajeGasto >
-                        65
-                      ? "#F59E0B"
-                      : "#10B981",
-
                 borderRadius:
                   20,
+
+                backgroundColor:
+                  porcentajeComprometido >
+                  90
+                    ? "#EF4444"
+                    : porcentajeComprometido >
+                        70
+                      ? "#F59E0B"
+                      : "#10B981",
               }}
             />
           </Box>
 
           <Typography
-            sx={{
-              fontSize: 12,
-              mt: 1,
-              color:
-                "text.secondary",
-            }}
+            color="text.secondary"
+            fontSize={12}
+            sx={{ mt: 1 }}
           >
-            Has utilizado{" "}
+            Tienes comprometido{" "}
             {Math.round(
-              porcentajeGasto
+              porcentajeComprometido
             )}
             % de tus ingresos
             semanales.
@@ -447,7 +832,7 @@ export default function Dashboard() {
             {
               xs: "1fr",
               md:
-                "repeat(3, 1fr)",
+                "repeat(3,1fr)",
             },
 
           gap: 2.5,
@@ -458,10 +843,17 @@ export default function Dashboard() {
             const info =
               resumen[lugar];
 
-            const disponible =
-              info.ingresos -
-              info.gastosFijos -
+            const gasto =
+              info.gastosFijos +
               info.gastosVariables;
+
+            const disponibleEspacio =
+              info.ingresos -
+              gasto;
+
+            const disponibleRealEspacio =
+              disponibleEspacio -
+              info.apartados;
 
             return (
               <Card
@@ -491,98 +883,65 @@ export default function Dashboard() {
                     {lugar}
                   </Typography>
 
-                  <Box
-                    sx={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      mb: 1.5,
-                    }}
-                  >
-                    <Typography color="text.secondary">
-                      Ingresos
-                    </Typography>
+                  <Fila
+                    titulo="Ingresos"
+                    valor={
+                      info.ingresos
+                    }
+                  />
 
-                    <Typography fontWeight={600}>
-                      {formatearDinero(
-                        info.ingresos
-                      )}
-                    </Typography>
-                  </Box>
+                  <Fila
+                    titulo="Gastos"
+                    valor={gasto}
+                  />
 
-                  <Box
-                    sx={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      mb: 1.5,
-                    }}
-                  >
-                    <Typography color="text.secondary">
-                      Gastos fijos
-                    </Typography>
-
-                    <Typography>
-                      {formatearDinero(
-                        info.gastosFijos
-                      )}
-                    </Typography>
-                  </Box>
+                  <Fila
+                    titulo="Apartados"
+                    valor={
+                      info.apartados
+                    }
+                  />
 
                   <Box
                     sx={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      mb: 2,
-                    }}
-                  >
-                    <Typography color="text.secondary">
-                      Gastos
-                      variables
-                    </Typography>
-
-                    <Typography>
-                      {formatearDinero(
-                        info.gastosVariables
-                      )}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      pt: 2,
                       borderTop:
                         "1px solid #EEEFF3",
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
+                      pt: 2,
+                      mt: 2,
                     }}
                   >
-                    <Typography fontWeight={700}>
-                      Disponible
-                    </Typography>
-
-                    <Typography
+                    <Box
                       sx={{
-                        fontWeight:
-                          800,
-
-                        color:
-                          disponible >=
-                          0
-                            ? "#10B981"
-                            : "#EF4444",
+                        display:
+                          "flex",
+                        justifyContent:
+                          "space-between",
+                        gap: 2,
                       }}
                     >
-                      {formatearDinero(
-                        disponible
-                      )}
-                    </Typography>
+                      <Typography
+                        fontWeight={800}
+                      >
+                        Disponible real
+                      </Typography>
+
+                      <Typography
+                        sx={{
+                          fontWeight:
+                            900,
+
+                          color:
+                            disponibleRealEspacio >=
+                            0
+                              ? "#10B981"
+                              : "#EF4444",
+                        }}
+                      >
+                        {formatearDinero(
+                          disponibleRealEspacio
+                        )}
+                      </Typography>
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>
@@ -590,6 +949,37 @@ export default function Dashboard() {
           }
         )}
       </Box>
+    </Box>
+  );
+}
+
+function Fila({
+  titulo,
+  valor,
+}) {
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        justifyContent:
+          "space-between",
+        gap: 2,
+        mb: 1.4,
+      }}
+    >
+      <Typography
+        color="text.secondary"
+      >
+        {titulo}
+      </Typography>
+
+      <Typography
+        fontWeight={600}
+      >
+        {formatearDinero(
+          valor
+        )}
+      </Typography>
     </Box>
   );
 }
