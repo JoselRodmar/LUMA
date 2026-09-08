@@ -28,20 +28,29 @@ const menu = [
     ruta: "/",
     icono: "✨",
   },
+
   {
     nombre: "Ingresos",
     ruta: "/ingresos",
     icono: "💰",
   },
+
   {
     nombre: "Gastos",
     ruta: "/gastos",
     icono: "🧾",
   },
+
   {
     nombre: "Apartados",
     ruta: "/apartados",
     icono: "🎯",
+  },
+
+  {
+    nombre: "Calendario",
+    ruta: "/calendario",
+    icono: "📅",
   },
 ];
 
@@ -67,19 +76,30 @@ export default function Layout({
       <Box
         sx={{
           height: 75,
-          display: "flex",
-          alignItems: "center",
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
           px: 2,
         }}
       >
         <Box>
           <Typography
             sx={{
-              fontWeight: 800,
-              fontSize: 26,
+              fontWeight:
+                800,
+
+              fontSize:
+                26,
+
               letterSpacing:
                 "-1px",
-              color: "#6D5DFB",
+
+              color:
+                "#6D5DFB",
             }}
           >
             LUMA
@@ -87,10 +107,14 @@ export default function Layout({
 
           <Typography
             sx={{
-              fontSize: 11,
+              fontSize:
+                11,
+
               color:
                 "text.secondary",
-              letterSpacing: 1,
+
+              letterSpacing:
+                1,
             }}
           >
             FINANZAS CLARAS
@@ -150,8 +174,11 @@ export default function Layout({
                 >
                   <Box
                     sx={{
-                      width: 36,
-                      fontSize: 20,
+                      width:
+                        36,
+
+                      fontSize:
+                        20,
                     }}
                   >
                     {
@@ -182,7 +209,9 @@ export default function Layout({
   return (
     <Box
       sx={{
-        display: "flex",
+        display:
+          "flex",
+
         minHeight:
           "100vh",
       }}
@@ -192,7 +221,8 @@ export default function Layout({
         elevation={0}
         sx={{
           display: {
-            md: "none",
+            md:
+              "none",
           },
 
           backgroundColor:
@@ -219,7 +249,10 @@ export default function Layout({
           <Typography
             sx={{
               ml: 1,
-              fontWeight: 800,
+
+              fontWeight:
+                800,
+
               color:
                 "#6D5DFB",
             }}
@@ -233,17 +266,21 @@ export default function Layout({
         component="nav"
         sx={{
           width: {
-            md: drawerWidth,
+            md:
+              drawerWidth,
           },
 
           flexShrink: {
-            md: 0,
+            md:
+              0,
           },
         }}
       >
         <Drawer
           variant="temporary"
-          open={mobileOpen}
+          open={
+            mobileOpen
+          }
           onClose={() =>
             setMobileOpen(
               false
@@ -255,8 +292,11 @@ export default function Layout({
           }}
           sx={{
             display: {
-              xs: "block",
-              md: "none",
+              xs:
+                "block",
+
+              md:
+                "none",
             },
 
             "& .MuiDrawer-paper":
@@ -274,8 +314,11 @@ export default function Layout({
           open
           sx={{
             display: {
-              xs: "none",
-              md: "block",
+              xs:
+                "none",
+
+              md:
+                "block",
             },
 
             "& .MuiDrawer-paper":
@@ -301,7 +344,8 @@ export default function Layout({
       <Box
         component="main"
         sx={{
-          flexGrow: 1,
+          flexGrow:
+            1,
 
           width: {
             md:
@@ -315,8 +359,11 @@ export default function Layout({
             "100vh",
 
           pt: {
-            xs: 10,
-            md: 0,
+            xs:
+              10,
+
+            md:
+              0,
           },
         }}
       >

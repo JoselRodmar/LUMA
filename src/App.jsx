@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Ingresos from "./pages/Ingresos";
 import Gastos from "./pages/Gastos";
 import Apartados from "./pages/Apartados";
+import Calendario from "./pages/Calendario";
 
 export default function App() {
   return (
@@ -34,6 +35,11 @@ export default function App() {
           <Route
             path="/apartados"
             element={<Apartados />}
+          />
+
+          <Route
+            path="/calendario"
+            element={<Calendario />}
           />
         </Routes>
       </Layout>
