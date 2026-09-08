@@ -42,6 +42,12 @@ const menu = [
   },
 
   {
+    nombre: "Movimientos",
+    ruta: "/movimientos",
+    icono: "🔄",
+  },
+
+  {
     nombre: "Apartados",
     ruta: "/apartados",
     icono: "🎯",
@@ -89,11 +95,9 @@ export default function Layout({
         <Box>
           <Typography
             sx={{
-              fontWeight:
-                800,
+              fontWeight: 800,
 
-              fontSize:
-                26,
+              fontSize: 26,
 
               letterSpacing:
                 "-1px",
@@ -107,14 +111,12 @@ export default function Layout({
 
           <Typography
             sx={{
-              fontSize:
-                11,
+              fontSize: 11,
 
               color:
                 "text.secondary",
 
-              letterSpacing:
-                1,
+              letterSpacing: 1,
             }}
           >
             FINANZAS CLARAS
@@ -140,12 +142,8 @@ export default function Layout({
                 }}
               >
                 <ListItemButton
-                  component={
-                    Link
-                  }
-                  to={
-                    item.ruta
-                  }
+                  component={Link}
+                  to={item.ruta}
                   onClick={() =>
                     setMobileOpen(
                       false
@@ -165,20 +163,16 @@ export default function Layout({
                         ? "#6D5DFB"
                         : "#565D6D",
 
-                    "&:hover":
-                      {
-                        backgroundColor:
-                          "#F3F1FF",
-                      },
+                    "&:hover": {
+                      backgroundColor:
+                        "#F3F1FF",
+                    },
                   }}
                 >
                   <Box
                     sx={{
-                      width:
-                        36,
-
-                      fontSize:
-                        20,
+                      width: 36,
+                      fontSize: 20,
                     }}
                   >
                     {
@@ -216,13 +210,14 @@ export default function Layout({
           "100vh",
       }}
     >
+      {/* MOBILE HEADER */}
+
       <AppBar
         position="fixed"
         elevation={0}
         sx={{
           display: {
-            md:
-              "none",
+            md: "none",
           },
 
           backgroundColor:
@@ -250,8 +245,7 @@ export default function Layout({
             sx={{
               ml: 1,
 
-              fontWeight:
-                800,
+              fontWeight: 800,
 
               color:
                 "#6D5DFB",
@@ -262,6 +256,8 @@ export default function Layout({
         </Toolbar>
       </AppBar>
 
+      {/* MENÚ */}
+
       <Box
         component="nav"
         sx={{
@@ -271,11 +267,12 @@ export default function Layout({
           },
 
           flexShrink: {
-            md:
-              0,
+            md: 0,
           },
         }}
       >
+        {/* MOBILE */}
+
         <Drawer
           variant="temporary"
           open={
@@ -292,11 +289,8 @@ export default function Layout({
           }}
           sx={{
             display: {
-              xs:
-                "block",
-
-              md:
-                "none",
+              xs: "block",
+              md: "none",
             },
 
             "& .MuiDrawer-paper":
@@ -309,16 +303,15 @@ export default function Layout({
           {drawer}
         </Drawer>
 
+        {/* DESKTOP */}
+
         <Drawer
           variant="permanent"
           open
           sx={{
             display: {
-              xs:
-                "none",
-
-              md:
-                "block",
+              xs: "none",
+              md: "block",
             },
 
             "& .MuiDrawer-paper":
@@ -341,11 +334,12 @@ export default function Layout({
         </Drawer>
       </Box>
 
+      {/* CONTENIDO */}
+
       <Box
         component="main"
         sx={{
-          flexGrow:
-            1,
+          flexGrow: 1,
 
           width: {
             md:
@@ -359,11 +353,8 @@ export default function Layout({
             "100vh",
 
           pt: {
-            xs:
-              10,
-
-            md:
-              0,
+            xs: 10,
+            md: 0,
           },
         }}
       >

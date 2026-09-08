@@ -9,6 +9,7 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Ingresos from "./pages/Ingresos";
 import Gastos from "./pages/Gastos";
+import Movimientos from "./pages/Movimientos";
 import Apartados from "./pages/Apartados";
 import Calendario from "./pages/Calendario";
 
@@ -30,6 +31,11 @@ export default function App() {
           <Route
             path="/gastos"
             element={<Gastos />}
+          />
+
+          <Route
+            path="/movimientos"
+            element={<Movimientos />}
           />
 
           <Route
