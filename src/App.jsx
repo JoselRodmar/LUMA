@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Ingresos from "./pages/Ingresos";
 import Gastos from "./pages/Gastos";
 import Movimientos from "./pages/Movimientos";
+import PlaneadoReal from "./pages/PlaneadoReal";
 import Apartados from "./pages/Apartados";
 import Calendario from "./pages/Calendario";
 
@@ -36,6 +37,11 @@ export default function App() {
           <Route
             path="/movimientos"
             element={<Movimientos />}
+          />
+
+          <Route
+            path="/planeado-real"
+            element={<PlaneadoReal />}
           />
 
           <Route

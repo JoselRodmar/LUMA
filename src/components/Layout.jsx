@@ -48,6 +48,12 @@ const menu = [
   },
 
   {
+    nombre: "Planeado vs. real",
+    ruta: "/planeado-real",
+    icono: "📊",
+  },
+
+  {
     nombre: "Apartados",
     ruta: "/apartados",
     icono: "🎯",
