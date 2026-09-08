@@ -1,5 +1,10 @@
-﻿import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+﻿import {
+  StrictMode,
+} from "react";
+
+import {
+  createRoot,
+} from "react-dom/client";
 
 import {
   CssBaseline,
@@ -8,86 +13,125 @@ import {
 } from "@mui/material";
 
 import App from "./App";
+
+import {
+  registerServiceWorker,
+} from "./registerSW";
+
 import "./index.css";
 
-const theme = createTheme({
-  palette: {
-    mode: "light",
+const theme =
+  createTheme({
+    palette: {
+      mode: "light",
 
-    primary: {
-      main: "#6D5DFB",
-    },
+      primary: {
+        main:
+          "#6D5DFB",
+      },
 
-    success: {
-      main: "#10B981",
-    },
+      success: {
+        main:
+          "#10B981",
+      },
 
-    error: {
-      main: "#EF4444",
-    },
+      error: {
+        main:
+          "#EF4444",
+      },
 
-    background: {
-      default: "#F6F7FB",
-      paper: "#FFFFFF",
-    },
+      background: {
+        default:
+          "#F6F7FB",
 
-    text: {
-      primary: "#1E2330",
-      secondary: "#73798A",
-    },
-  },
+        paper:
+          "#FFFFFF",
+      },
 
-  typography: {
-    fontFamily:
-      '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+      text: {
+        primary:
+          "#1E2330",
 
-    h4: {
-      fontWeight: 700,
-    },
-
-    h5: {
-      fontWeight: 700,
-    },
-
-    button: {
-      textTransform: "none",
-      fontWeight: 600,
-    },
-  },
-
-  shape: {
-    borderRadius: 16,
-  },
-
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: 12,
-          paddingLeft: 20,
-          paddingRight: 20,
-        },
+        secondary:
+          "#73798A",
       },
     },
 
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          boxShadow:
-            "0 8px 30px rgba(31,38,135,0.07)",
+    typography: {
+      fontFamily:
+        '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+
+      h4: {
+        fontWeight:
+          700,
+      },
+
+      h5: {
+        fontWeight:
+          700,
+      },
+
+      button: {
+        textTransform:
+          "none",
+
+        fontWeight:
+          600,
+      },
+    },
+
+    shape: {
+      borderRadius:
+        16,
+    },
+
+    components: {
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            borderRadius:
+              12,
+
+            paddingLeft:
+              20,
+
+            paddingRight:
+              20,
+          },
+        },
+      },
+
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            boxShadow:
+              "0 8px 30px rgba(31,38,135,0.07)",
+          },
         },
       },
     },
-  },
-});
+  });
 
 createRoot(
-  document.getElementById("root")
+  document.getElementById(
+    "root"
+  )
 ).render(
   <StrictMode>
-    <ThemeProvider theme={theme}>
+    <ThemeProvider
+      theme={theme}
+    >
       <CssBaseline />
+
       <App />
     </ThemeProvider>
   </StrictMode>
 );
+
+/*
+========================================
+PWA
+========================================
+*/
+
+registerServiceWorker();
