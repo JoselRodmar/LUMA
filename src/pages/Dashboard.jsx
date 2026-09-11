@@ -5,7 +5,6 @@
 } from "react";
 
 import {
-  collection,
   getDocs,
 } from "firebase/firestore";
 
@@ -31,8 +30,12 @@ import {
 } from "recharts";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+} from "../services/userData";
 
 import {
   calcularSemanal,
@@ -44,6 +47,18 @@ import {
 } from "../utils/apartados";
 
 import SummaryCard from "../components/SummaryCard";
+
+const lugares = [
+  "Casa",
+  "Consultorio",
+  "Extras",
+];
+
+const coloresEspacios = [
+  "#6D5DFB",
+  "#10B981",
+  "#F59E0B",
+];
 
 const crearResumen = () => ({
   Casa: {
@@ -68,19 +83,11 @@ const crearResumen = () => ({
   },
 });
 
-const lugares = [
-  "Casa",
-  "Consultorio",
-  "Extras",
-];
-
-const coloresEspacios = [
-  "#6D5DFB",
-  "#10B981",
-  "#F59E0B",
-];
-
 export default function Dashboard() {
+  const {
+    user,
+  } = useAuth();
+
   const [
     resumen,
     setResumen,
@@ -99,228 +106,201 @@ export default function Dashboard() {
   ] = useState("");
 
   useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        setLoading(true);
+    const cargarDatos =
+      async () => {
+        try {
+          setLoading(true);
 
-        const nuevoResumen =
-          crearResumen();
+          const nuevoResumen =
+            crearResumen();
 
-        /*
-        ========================================
-        INGRESOS
-        ========================================
-        */
+          const [
+            ingresosSnap,
+            gastosSnap,
+            apartadosSnap,
+          ] =
+            await Promise.all([
+              getDocs(
+                userCollection(
+                  user.uid,
+                  "ingresos"
+                )
+              ),
 
-        const ingresosSnap =
-          await getDocs(
-            collection(
-              db,
-              "ingresos"
-            )
-          );
+              getDocs(
+                userCollection(
+                  user.uid,
+                  "gastos"
+                )
+              ),
 
-        ingresosSnap.forEach(
-          (documento) => {
-            const data =
-              documento.data();
+              getDocs(
+                userCollection(
+                  user.uid,
+                  "apartados"
+                )
+              ),
+            ]);
 
-            if (
-              !nuevoResumen[
-                data.lugar
-              ]
-            ) {
-              return;
-            }
+          ingresosSnap.forEach(
+            (documento) => {
+              const data =
+                documento.data();
 
-            nuevoResumen[
-              data.lugar
-            ].ingresos +=
-              calcularSemanal(
-                data.monto,
-                data.frecuencia
-              );
-          }
-        );
+              if (
+                !nuevoResumen[
+                  data.lugar
+                ]
+              ) {
+                return;
+              }
 
-        /*
-        ========================================
-        GASTOS
-        ========================================
-        */
-
-        const gastosSnap =
-          await getDocs(
-            collection(
-              db,
-              "gastos"
-            )
-          );
-
-        gastosSnap.forEach(
-          (documento) => {
-            const data =
-              documento.data();
-
-            if (
-              !nuevoResumen[
-                data.lugar
-              ]
-            ) {
-              return;
-            }
-
-            const semanal =
-              calcularSemanal(
-                data.monto,
-                data.frecuencia
-              );
-
-            if (
-              data.tipo ===
-              "Fijo"
-            ) {
               nuevoResumen[
                 data.lugar
-              ].gastosFijos +=
-                semanal;
-            } else {
-              nuevoResumen[
-                data.lugar
-              ].gastosVariables +=
-                semanal;
+              ].ingresos +=
+                calcularSemanal(
+                  data.monto,
+                  data.frecuencia
+                );
             }
-          }
-        );
-
-        /*
-        ========================================
-        APARTADOS
-        ========================================
-        */
-
-        const apartadosSnap =
-          await getDocs(
-            collection(
-              db,
-              "apartados"
-            )
           );
 
-        apartadosSnap.forEach(
-          (documento) => {
-            const data =
-              documento.data();
+          gastosSnap.forEach(
+            (documento) => {
+              const data =
+                documento.data();
 
-            if (
-              !nuevoResumen[
+              if (
+                !nuevoResumen[
+                  data.lugar
+                ]
+              ) {
+                return;
+              }
+
+              const semanal =
+                calcularSemanal(
+                  data.monto,
+                  data.frecuencia
+                );
+
+              if (
+                data.tipo ===
+                "Fijo"
+              ) {
+                nuevoResumen[
+                  data.lugar
+                ].gastosFijos +=
+                  semanal;
+              } else {
+                nuevoResumen[
+                  data.lugar
+                ].gastosVariables +=
+                  semanal;
+              }
+            }
+          );
+
+          apartadosSnap.forEach(
+            (documento) => {
+              const data =
+                documento.data();
+
+              if (
+                !nuevoResumen[
+                  data.lugar
+                ]
+              ) {
+                return;
+              }
+
+              if (
+                data.activo ===
+                false
+              ) {
+                return;
+              }
+
+              nuevoResumen[
                 data.lugar
-              ]
-            ) {
-              return;
+              ].apartados +=
+                calcularApartadoSemanal(
+                  data.montoObjetivo,
+                  data.ahorrado,
+                  data.fechaVencimiento
+                );
             }
+          );
 
-            if (
-              data.activo ===
-              false
-            ) {
-              return;
-            }
+          setResumen(
+            nuevoResumen
+          );
 
-            nuevoResumen[
-              data.lugar
-            ].apartados +=
-              calcularApartadoSemanal(
-                data.montoObjetivo,
-                data.ahorrado,
-                data.fechaVencimiento
-              );
-          }
-        );
+          setError("");
+        } catch (err) {
+          console.error(err);
 
-        setResumen(
-          nuevoResumen
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "No fue posible cargar la información financiera."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+          setError(
+            "No fue posible cargar la información financiera."
+          );
+        } finally {
+          setLoading(false);
+        }
+      };
 
     cargarDatos();
-  }, []);
-
-  /*
-  ========================================
-  TOTALES GENERALES
-  ========================================
-  */
+  }, [user.uid]);
 
   const totalIngresos =
-    useMemo(() => {
-      return Object.values(
-        resumen
-      ).reduce(
-        (acc, item) =>
-          acc +
-          item.ingresos,
-        0
-      );
-    }, [resumen]);
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.ingresos,
+          0
+        ),
+      [resumen]
+    );
 
   const totalGastos =
-    useMemo(() => {
-      return Object.values(
-        resumen
-      ).reduce(
-        (acc, item) =>
-          acc +
-          item.gastosFijos +
-          item.gastosVariables,
-        0
-      );
-    }, [resumen]);
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.gastosFijos +
+            item.gastosVariables,
+          0
+        ),
+      [resumen]
+    );
 
   const totalApartados =
-    useMemo(() => {
-      return Object.values(
-        resumen
-      ).reduce(
-        (acc, item) =>
-          acc +
-          item.apartados,
-        0
-      );
-    }, [resumen]);
-
-  /*
-  Disponible tradicional:
-  Ingresos - gastos
-  */
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.apartados,
+          0
+        ),
+      [resumen]
+    );
 
   const disponibleGeneral =
     totalIngresos -
     totalGastos;
 
-  /*
-  Disponible real:
-  Ingresos - gastos - apartados
-  */
-
   const disponibleReal =
     disponibleGeneral -
     totalApartados;
-
-  /*
-  Porcentaje realmente comprometido
-  */
 
   const porcentajeComprometido =
     totalIngresos > 0
@@ -337,12 +317,6 @@ export default function Dashboard() {
         )
       : 0;
 
-  /*
-  ========================================
-  DATOS PARA GRÁFICA DE BARRAS
-  ========================================
-  */
-
   const datosComparativa =
     lugares.map(
       (lugar) => {
@@ -351,18 +325,15 @@ export default function Dashboard() {
 
         return {
           nombre: lugar,
-
           ingresos:
             Math.round(
               info.ingresos
             ),
-
           gastos:
             Math.round(
               info.gastosFijos +
                 info.gastosVariables
             ),
-
           apartados:
             Math.round(
               info.apartados
@@ -371,40 +342,26 @@ export default function Dashboard() {
       }
     );
 
-  /*
-  ========================================
-  DATOS PARA GRÁFICA CIRCULAR
-  ========================================
-  */
-
   const datosDistribucionGastos =
     lugares
       .map(
-        (lugar) => {
-          const info =
-            resumen[lugar];
-
-          return {
-            name: lugar,
-
-            value:
-              Math.round(
-                info.gastosFijos +
-                  info.gastosVariables
-              ),
-          };
-        }
+        (lugar) => ({
+          name: lugar,
+          value:
+            Math.round(
+              resumen[
+                lugar
+              ].gastosFijos +
+                resumen[
+                  lugar
+                ].gastosVariables
+            ),
+        })
       )
       .filter(
         (item) =>
           item.value > 0
       );
-
-  /*
-  ========================================
-  LECTURA RÁPIDA
-  ========================================
-  */
 
   const espacioMayorGasto =
     useMemo(() => {
@@ -437,11 +394,6 @@ export default function Dashboard() {
       return resultado;
     }, [resumen]);
 
-  /*
-  Ahora "Mejor disponible"
-  usa el DISPONIBLE REAL
-  */
-
   const espacioMayorDisponibleReal =
     useMemo(() => {
       let resultado = {
@@ -466,8 +418,7 @@ export default function Dashboard() {
           ) {
             resultado = {
               nombre: lugar,
-              valor:
-                disponible,
+              valor: disponible,
             };
           }
         }
@@ -477,50 +428,41 @@ export default function Dashboard() {
     }, [resumen]);
 
   const gastoFijoTotal =
-    useMemo(() => {
-      return Object.values(
-        resumen
-      ).reduce(
-        (acc, item) =>
-          acc +
-          item.gastosFijos,
-        0
-      );
-    }, [resumen]);
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.gastosFijos,
+          0
+        ),
+      [resumen]
+    );
 
   const gastoVariableTotal =
-    useMemo(() => {
-      return Object.values(
-        resumen
-      ).reduce(
-        (acc, item) =>
-          acc +
-          item.gastosVariables,
-        0
-      );
-    }, [resumen]);
-
-  /*
-  ========================================
-  LOADING
-  ========================================
-  */
+    useMemo(
+      () =>
+        Object.values(
+          resumen
+        ).reduce(
+          (acc, item) =>
+            acc +
+            item.gastosVariables,
+          0
+        ),
+      [resumen]
+    );
 
   if (loading) {
     return (
       <Box
         sx={{
-          minHeight:
-            "70vh",
-
-          display:
-            "flex",
-
-          justifyContent:
-            "center",
-
-          alignItems:
-            "center",
+          minHeight: "70vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
         }}
       >
         <CircularProgress />
@@ -536,65 +478,42 @@ export default function Dashboard() {
           sm: 3,
           lg: 4,
         },
-
         maxWidth: 1450,
-
         mx: "auto",
       }}
     >
-      {/* ===================================
-          ENCABEZADO
-      =================================== */}
-
-      <Box
-        sx={{
-          mb: 4,
-        }}
-      >
+      <Box sx={{ mb: 4 }}>
         <Typography
           sx={{
             fontSize: {
               xs: 29,
               md: 36,
             },
-
-            fontWeight:
-              800,
-
-            letterSpacing:
-              "-1.2px",
+            fontWeight: 800,
           }}
         >
-          Hola 👋
+          Hola{" "}
+          {user?.displayName
+            ? user.displayName.split(
+                " "
+              )[0]
+            : ""}
+          👋
         </Typography>
 
         <Typography
           color="text.secondary"
-          sx={{
-            mt: 0.5,
-          }}
         >
           Este es tu panorama
           financiero semanal.
         </Typography>
       </Box>
 
-      {/* ===================================
-          ERROR
-      =================================== */}
-
       {error && (
-        <Card
-          sx={{
-            mb: 3,
-            borderRadius:
-              "18px",
-          }}
-        >
+        <Card sx={{ mb: 3 }}>
           <CardContent>
             <Typography
               color="error"
-              fontWeight={600}
             >
               {error}
             </Typography>
@@ -602,35 +521,22 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* ===================================
-          TARJETAS PRINCIPALES
-      =================================== */}
-
       <Box
         sx={{
-          display:
-            "grid",
-
-          gridTemplateColumns:
-            {
-              xs:
-                "1fr",
-
-              sm:
-                "repeat(2, 1fr)",
-
-              xl:
-                "repeat(4, 1fr)",
-            },
-
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            xl:
+              "repeat(4, 1fr)",
+          },
           gap: 2.5,
         }}
       >
         <SummaryCard
           title="Ingresos"
-          value={
-            totalIngresos
-          }
+          value={totalIngresos}
           color="#0E9F6E"
           background="#ECFDF5"
           icon="💰"
@@ -638,9 +544,7 @@ export default function Dashboard() {
 
         <SummaryCard
           title="Gastos"
-          value={
-            totalGastos
-          }
+          value={totalGastos}
           color="#E44747"
           background="#FFF1F1"
           icon="🧾"
@@ -648,9 +552,7 @@ export default function Dashboard() {
 
         <SummaryCard
           title="Apartados"
-          value={
-            totalApartados
-          }
+          value={totalApartados}
           color="#D97706"
           background="#FFF7E7"
           icon="🎯"
@@ -658,12 +560,9 @@ export default function Dashboard() {
 
         <SummaryCard
           title="Disponible real"
-          value={
-            disponibleReal
-          }
+          value={disponibleReal}
           color={
-            disponibleReal >=
-            0
+            disponibleReal >= 0
               ? "#6755D9"
               : "#EF4444"
           }
@@ -672,50 +571,19 @@ export default function Dashboard() {
         />
       </Box>
 
-      {/* ===================================
-          DISPONIBLE REAL DESTACADO
-      =================================== */}
-
       <Card
         sx={{
           mt: 3,
-
-          borderRadius:
-            "24px",
-
-          border:
-            disponibleReal >=
-            0
-              ? "1px solid #E7E2FF"
-              : "1px solid #FFDADA",
-
+          borderRadius: "24px",
           background:
-            disponibleReal >=
-            0
-              ? "linear-gradient(135deg, #FFFFFF 0%, #F5F2FF 100%)"
-              : "linear-gradient(135deg, #FFFFFF 0%, #FFF1F1 100%)",
+            "linear-gradient(135deg, #FFFFFF 0%, #F5F2FF 100%)",
         }}
       >
-        <CardContent
-          sx={{
-            p: {
-              xs: 2.5,
-              md: 3.5,
-            },
-          }}
-        >
+        <CardContent sx={{ p: 3 }}>
           <Typography
-            sx={{
-              color:
-                "text.secondary",
-
-              fontSize: 12,
-
-              fontWeight: 800,
-
-              letterSpacing:
-                1,
-            }}
+            color="text.secondary"
+            fontSize={12}
+            fontWeight={800}
           >
             TU DINERO REALMENTE
             DISPONIBLE
@@ -727,20 +595,11 @@ export default function Dashboard() {
                 xs: 34,
                 md: 46,
               },
-
-              fontWeight:
-                900,
-
-              letterSpacing:
-                "-1.5px",
-
+              fontWeight: 900,
               color:
-                disponibleReal >=
-                0
+                disponibleReal >= 0
                   ? "#6755D9"
                   : "#EF4444",
-
-              mt: 0.5,
             }}
           >
             {formatearDinero(
@@ -751,150 +610,47 @@ export default function Dashboard() {
           <Typography
             color="text.secondary"
             sx={{
-              maxWidth: 720,
               mt: 1,
               lineHeight: 1.6,
             }}
           >
-            Es lo que realmente
-            queda disponible esta
-            semana después de
-            considerar tus gastos
-            actuales y el dinero que
-            necesitas reservar para
-            compromisos futuros.
+            Después de considerar
+            gastos actuales y la
+            reserva recomendada para
+            tus compromisos futuros.
           </Typography>
-
-          <Box
-            sx={{
-              display:
-                "flex",
-
-              flexWrap:
-                "wrap",
-
-              gap: {
-                xs: 2,
-                md: 4,
-              },
-
-              mt: 3,
-            }}
-          >
-            <Box>
-              <Typography
-                color="text.secondary"
-                fontSize={12}
-              >
-                Disponible antes
-                de apartados
-              </Typography>
-
-              <Typography
-                fontWeight={800}
-              >
-                {formatearDinero(
-                  disponibleGeneral
-                )}
-              </Typography>
-            </Box>
-
-            <Box>
-              <Typography
-                color="text.secondary"
-                fontSize={12}
-              >
-                Reserva recomendada
-              </Typography>
-
-              <Typography
-                fontWeight={800}
-                sx={{
-                  color:
-                    "#D97706",
-                }}
-              >
-                {formatearDinero(
-                  totalApartados
-                )}
-              </Typography>
-            </Box>
-          </Box>
         </CardContent>
       </Card>
 
-      {/* ===================================
-          GRÁFICAS
-      =================================== */}
-
       <Box
         sx={{
-          display:
-            "grid",
-
-          gridTemplateColumns:
-            {
-              xs:
-                "1fr",
-
-              lg:
-                "1.5fr 1fr",
-            },
-
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            lg: "1.5fr 1fr",
+          },
           gap: 2.5,
-
           mt: 3,
         }}
       >
-        {/* BARRAS */}
-
         <Card
           sx={{
-            borderRadius:
-              "24px",
+            borderRadius: "24px",
           }}
         >
-          <CardContent
-            sx={{
-              p: 3,
-            }}
-          >
+          <CardContent sx={{ p: 3 }}>
             <Typography
-              sx={{
-                fontWeight:
-                  800,
-
-                fontSize:
-                  19,
-              }}
+              fontWeight={800}
+              fontSize={19}
             >
               Flujo por espacio
             </Typography>
 
-            <Typography
-              sx={{
-                color:
-                  "text.secondary",
-
-                fontSize:
-                  13,
-
-                mt: 0.5,
-
-                mb: 3,
-              }}
-            >
-              Ingresos, gastos y
-              apartados semanales.
-            </Typography>
-
             <Box
               sx={{
-                width:
-                  "100%",
-
-                height:
-                  330,
+                width: "100%",
+                height: 330,
+                mt: 2,
               }}
             >
               <ResponsiveContainer>
@@ -902,12 +658,6 @@ export default function Dashboard() {
                   data={
                     datosComparativa
                   }
-                  margin={{
-                    top: 10,
-                    right: 10,
-                    left: 0,
-                    bottom: 0,
-                  }}
                 >
                   <CartesianGrid
                     strokeDasharray="4 4"
@@ -934,36 +684,18 @@ export default function Dashboard() {
                     dataKey="ingresos"
                     name="Ingresos"
                     fill="#10B981"
-                    radius={[
-                      8,
-                      8,
-                      0,
-                      0,
-                    ]}
                   />
 
                   <Bar
                     dataKey="gastos"
                     name="Gastos"
                     fill="#EF4444"
-                    radius={[
-                      8,
-                      8,
-                      0,
-                      0,
-                    ]}
                   />
 
                   <Bar
                     dataKey="apartados"
                     name="Apartados"
                     fill="#F59E0B"
-                    radius={[
-                      8,
-                      8,
-                      0,
-                      0,
-                    ]}
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -971,54 +703,22 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* PIE */}
-
         <Card
           sx={{
-            borderRadius:
-              "24px",
+            borderRadius: "24px",
           }}
         >
-          <CardContent
-            sx={{
-              p: 3,
-            }}
-          >
+          <CardContent sx={{ p: 3 }}>
             <Typography
-              sx={{
-                fontWeight:
-                  800,
-
-                fontSize:
-                  19,
-              }}
+              fontWeight={800}
+              fontSize={19}
             >
               Distribución de gastos
             </Typography>
 
-            <Typography
-              sx={{
-                color:
-                  "text.secondary",
-
-                fontSize:
-                  13,
-
-                mt: 0.5,
-              }}
-            >
-              Qué espacio está
-              absorbiendo más dinero.
-            </Typography>
-
             <Box
               sx={{
-                width:
-                  "100%",
-
-                height:
-                  270,
-
+                height: 280,
                 mt: 2,
               }}
             >
@@ -1032,20 +732,17 @@ export default function Dashboard() {
                       }
                       dataKey="value"
                       nameKey="name"
-                      cx="50%"
-                      cy="50%"
                       innerRadius={58}
                       outerRadius={90}
-                      paddingAngle={4}
                     >
                       {datosDistribucionGastos.map(
                         (
-                          entry,
+                          item,
                           index
                         ) => (
                           <Cell
                             key={
-                              entry.name
+                              item.name
                             }
                             fill={
                               coloresEspacios[
@@ -1072,175 +769,67 @@ export default function Dashboard() {
               ) : (
                 <Box
                   sx={{
-                    height:
-                      "100%",
-
-                    display:
-                      "flex",
-
-                    justifyContent:
-                      "center",
-
+                    height: "100%",
+                    display: "flex",
                     alignItems:
+                      "center",
+                    justifyContent:
                       "center",
                   }}
                 >
                   <Typography
                     color="text.secondary"
                   >
-                    Aún no hay
-                    gastos.
+                    Aún no hay gastos.
                   </Typography>
                 </Box>
               )}
             </Box>
-
-            {datosDistribucionGastos.length >
-              0 && (
-              <Box
-                sx={{
-                  display:
-                    "flex",
-
-                  justifyContent:
-                    "center",
-
-                  gap: 2,
-
-                  flexWrap:
-                    "wrap",
-
-                  mt: -1,
-                }}
-              >
-                {datosDistribucionGastos.map(
-                  (
-                    item,
-                    index
-                  ) => (
-                    <Box
-                      key={
-                        item.name
-                      }
-                      sx={{
-                        display:
-                          "flex",
-
-                        alignItems:
-                          "center",
-
-                        gap: 0.8,
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 10,
-                          height: 10,
-
-                          borderRadius:
-                            "50%",
-
-                          backgroundColor:
-                            coloresEspacios[
-                              index %
-                                coloresEspacios.length
-                            ],
-                        }}
-                      />
-
-                      <Typography
-                        sx={{
-                          fontSize:
-                            12,
-
-                          color:
-                            "text.secondary",
-                        }}
-                      >
-                        {
-                          item.name
-                        }
-                      </Typography>
-                    </Box>
-                  )
-                )}
-              </Box>
-            )}
           </CardContent>
         </Card>
       </Box>
 
-      {/* ===================================
-          SALUD FINANCIERA
-      =================================== */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
           mt: 3,
+          borderRadius: "24px",
         }}
       >
-        <CardContent
-          sx={{
-            p: 3,
-          }}
-        >
+        <CardContent sx={{ p: 3 }}>
           <Typography
-            sx={{
-              fontWeight:
-                800,
-
-              fontSize:
-                19,
-            }}
+            fontWeight={800}
+            fontSize={19}
           >
             Salud financiera
           </Typography>
 
           <Typography
-            sx={{
-              color:
-                "text.secondary",
-
-              mt: 0.5,
-
-              fontSize:
-                14,
-            }}
+            color="text.secondary"
+            sx={{ mt: 0.5 }}
           >
-            {disponibleReal >=
-            0
-              ? "Tus ingresos alcanzan para cubrir tus gastos actuales y tus apartados."
-              : "Tus gastos y compromisos futuros superan tus ingresos semanales actuales."}
+            Tienes comprometido{" "}
+            {Math.round(
+              porcentajeComprometido
+            )}
+            % de tus ingresos
+            semanales.
           </Typography>
 
           <Box
             sx={{
               mt: 3,
-
+              height: 12,
+              borderRadius: 20,
+              overflow: "hidden",
               backgroundColor:
                 "#ECEEF3",
-
-              borderRadius:
-                20,
-
-              overflow:
-                "hidden",
-
-              height:
-                12,
             }}
           >
             <Box
               sx={{
-                height:
-                  "100%",
-
+                height: "100%",
                 width:
                   `${porcentajeComprometido}%`,
-
                 backgroundColor:
                   porcentajeComprometido >
                   90
@@ -1249,53 +838,18 @@ export default function Dashboard() {
                         70
                       ? "#F59E0B"
                       : "#10B981",
-
-                borderRadius:
-                  20,
-
-                transition:
-                  "width .4s ease",
               }}
             />
           </Box>
-
-          <Typography
-            sx={{
-              fontSize:
-                12,
-
-              mt: 1,
-
-              color:
-                "text.secondary",
-            }}
-          >
-            Tienes comprometido{" "}
-            {Math.round(
-              porcentajeComprometido
-            )}
-            % de tus ingresos
-            semanales entre gastos
-            y apartados.
-          </Typography>
         </CardContent>
       </Card>
-
-      {/* ===================================
-          TUS ESPACIOS
-      =================================== */}
 
       <Typography
         sx={{
           mt: 4,
-
           mb: 2,
-
-          fontWeight:
-            800,
-
-          fontSize:
-            22,
+          fontWeight: 800,
+          fontSize: 22,
         }}
       >
         Tus espacios
@@ -1303,18 +857,12 @@ export default function Dashboard() {
 
       <Box
         sx={{
-          display:
-            "grid",
-
-          gridTemplateColumns:
-            {
-              xs:
-                "1fr",
-
-              md:
-                "repeat(3, 1fr)",
-            },
-
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            md:
+              "repeat(3, 1fr)",
+          },
           gap: 2.5,
         }}
       >
@@ -1323,43 +871,33 @@ export default function Dashboard() {
             const info =
               resumen[lugar];
 
-            const gastosEspacio =
+            const gastos =
               info.gastosFijos +
               info.gastosVariables;
 
             const disponible =
               info.ingresos -
-              gastosEspacio;
+              gastos;
 
-            const disponibleRealEspacio =
+            const real =
               disponible -
               info.apartados;
 
             return (
               <Card
-                key={
-                  lugar
-                }
+                key={lugar}
                 sx={{
                   borderRadius:
                     "24px",
                 }}
               >
                 <CardContent
-                  sx={{
-                    p: 3,
-                  }}
+                  sx={{ p: 3 }}
                 >
                   <Typography
-                    sx={{
-                      fontSize:
-                        20,
-
-                      fontWeight:
-                        800,
-
-                      mb: 3,
-                    }}
+                    fontWeight={800}
+                    fontSize={20}
+                    sx={{ mb: 2 }}
                   >
                     {lugar ===
                     "Casa"
@@ -1371,99 +909,57 @@ export default function Dashboard() {
                     {lugar}
                   </Typography>
 
-                  <FilaEspacio
+                  <Fila
                     titulo="Ingresos"
                     valor={
                       info.ingresos
                     }
-                    color="#10B981"
                   />
 
-                  <FilaEspacio
+                  <Fila
                     titulo="Gastos fijos"
                     valor={
                       info.gastosFijos
                     }
                   />
 
-                  <FilaEspacio
+                  <Fila
                     titulo="Gastos variables"
                     valor={
                       info.gastosVariables
                     }
                   />
 
-                  <FilaEspacio
+                  <Fila
                     titulo="Apartados"
                     valor={
                       info.apartados
                     }
-                    color="#D97706"
                   />
 
                   <Box
                     sx={{
-                      pt: 2,
-
                       mt: 2,
-
+                      pt: 2,
                       borderTop:
                         "1px solid #EEEFF3",
                     }}
                   >
-                    <FilaEspacio
+                    <Fila
                       titulo="Disponible"
-                      valor={
-                        disponible
-                      }
-                      negrita
+                      valor={disponible}
                     />
 
-                    <Box
-                      sx={{
-                        display:
-                          "flex",
-
-                        justifyContent:
-                          "space-between",
-
-                        alignItems:
-                          "center",
-
-                        gap: 2,
-
-                        mt: 1.4,
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          fontWeight:
-                            800,
-                        }}
-                      >
-                        Disponible real
-                      </Typography>
-
-                      <Typography
-                        sx={{
-                          fontWeight:
-                            900,
-
-                          fontSize:
-                            18,
-
-                          color:
-                            disponibleRealEspacio >=
-                            0
-                              ? "#6755D9"
-                              : "#EF4444",
-                        }}
-                      >
-                        {formatearDinero(
-                          disponibleRealEspacio
-                        )}
-                      </Typography>
-                    </Box>
+                    <Fila
+                      titulo="Disponible real"
+                      valor={real}
+                      fuerte
+                      color={
+                        real >= 0
+                          ? "#6755D9"
+                          : "#EF4444"
+                      }
+                    />
                   </Box>
                 </CardContent>
               </Card>
@@ -1472,21 +968,12 @@ export default function Dashboard() {
         )}
       </Box>
 
-      {/* ===================================
-          LECTURA RÁPIDA
-      =================================== */}
-
       <Typography
         sx={{
           mt: 4,
-
           mb: 2,
-
-          fontWeight:
-            800,
-
-          fontSize:
-            22,
+          fontWeight: 800,
+          fontSize: 22,
         }}
       >
         Lectura rápida
@@ -1494,238 +981,76 @@ export default function Dashboard() {
 
       <Box
         sx={{
-          display:
-            "grid",
-
-          gridTemplateColumns:
-            {
-              xs:
-                "1fr",
-
-              sm:
-                "repeat(2, 1fr)",
-
-              lg:
-                "repeat(4, 1fr)",
-            },
-
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
           gap: 2,
         }}
       >
-        {/* MAYOR GASTO */}
+        <Lectura
+          titulo="Mayor gasto"
+          principal={
+            espacioMayorGasto.nombre
+          }
+          valor={
+            espacioMayorGasto.valor
+          }
+        />
 
-        <Card
-          sx={{
-            borderRadius:
-              "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              Mayor gasto
-            </Typography>
+        <Lectura
+          titulo="Mejor disponible real"
+          principal={
+            espacioMayorDisponibleReal.nombre
+          }
+          valor={
+            espacioMayorDisponibleReal.valor
+          }
+        />
 
-            <Typography
-              sx={{
-                mt: 1,
+        <Lectura
+          titulo="Gastos fijos"
+          valor={gastoFijoTotal}
+        />
 
-                fontWeight:
-                  800,
-
-                fontSize:
-                  20,
-              }}
-            >
-              {
-                espacioMayorGasto.nombre
-              }
-            </Typography>
-
-            <Typography
-              color="error"
-              fontWeight={700}
-            >
-              {formatearDinero(
-                espacioMayorGasto.valor
-              )}
-            </Typography>
-          </CardContent>
-        </Card>
-
-        {/* MEJOR DISPONIBLE REAL */}
-
-        <Card
-          sx={{
-            borderRadius:
-              "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              Mejor disponible real
-            </Typography>
-
-            <Typography
-              sx={{
-                mt: 1,
-
-                fontWeight:
-                  800,
-
-                fontSize:
-                  20,
-              }}
-            >
-              {
-                espacioMayorDisponibleReal.nombre
-              }
-            </Typography>
-
-            <Typography
-              color={
-                espacioMayorDisponibleReal.valor >=
-                0
-                  ? "success.main"
-                  : "error.main"
-              }
-              fontWeight={700}
-            >
-              {formatearDinero(
-                espacioMayorDisponibleReal.valor
-              )}
-            </Typography>
-          </CardContent>
-        </Card>
-
-        {/* GASTOS FIJOS */}
-
-        <Card
-          sx={{
-            borderRadius:
-              "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              Gastos fijos
-            </Typography>
-
-            <Typography
-              sx={{
-                mt: 1,
-
-                fontWeight:
-                  800,
-
-                fontSize:
-                  20,
-              }}
-            >
-              {formatearDinero(
-                gastoFijoTotal
-              )}
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={12}
-            >
-              equivalente semanal
-            </Typography>
-          </CardContent>
-        </Card>
-
-        {/* GASTOS VARIABLES */}
-
-        <Card
-          sx={{
-            borderRadius:
-              "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              Gastos variables
-            </Typography>
-
-            <Typography
-              sx={{
-                mt: 1,
-
-                fontWeight:
-                  800,
-
-                fontSize:
-                  20,
-              }}
-            >
-              {formatearDinero(
-                gastoVariableTotal
-              )}
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={12}
-            >
-              equivalente semanal
-            </Typography>
-          </CardContent>
-        </Card>
+        <Lectura
+          titulo="Gastos variables"
+          valor={
+            gastoVariableTotal
+          }
+        />
       </Box>
     </Box>
   );
 }
 
-/*
-========================================
-COMPONENTE AUXILIAR
-========================================
-*/
-
-function FilaEspacio({
+function Fila({
   titulo,
   valor,
+  fuerte = false,
   color,
-  negrita = false,
 }) {
   return (
     <Box
       sx={{
-        display:
-          "flex",
-
+        display: "flex",
         justifyContent:
           "space-between",
-
-        alignItems:
-          "center",
-
         gap: 2,
-
-        mb: 1.5,
+        mb: 1.4,
       }}
     >
       <Typography
         color="text.secondary"
-        sx={{
-          fontWeight:
-            negrita
-              ? 700
-              : 400,
-        }}
+        fontWeight={
+          fuerte
+            ? 700
+            : 400
+        }
       >
         {titulo}
       </Typography>
@@ -1733,10 +1058,9 @@ function FilaEspacio({
       <Typography
         sx={{
           fontWeight:
-            negrita
-              ? 800
-              : 600,
-
+            fuerte
+              ? 900
+              : 700,
           color:
             color ||
             "text.primary",
@@ -1747,5 +1071,52 @@ function FilaEspacio({
         )}
       </Typography>
     </Box>
+  );
+}
+
+function Lectura({
+  titulo,
+  principal,
+  valor,
+}) {
+  return (
+    <Card
+      sx={{
+        borderRadius: "20px",
+      }}
+    >
+      <CardContent>
+        <Typography
+          color="text.secondary"
+          fontSize={13}
+        >
+          {titulo}
+        </Typography>
+
+        {principal && (
+          <Typography
+            fontWeight={800}
+            fontSize={20}
+            sx={{ mt: 1 }}
+          >
+            {principal}
+          </Typography>
+        )}
+
+        <Typography
+          fontWeight={800}
+          sx={{
+            mt:
+              principal
+                ? 0
+                : 1,
+          }}
+        >
+          {formatearDinero(
+            valor
+          )}
+        </Typography>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function estaAutenticado() {
+      return request.auth != null;
+    }
+
+    function esPropietario(userId) {
+      return estaAutenticado()
+        && request.auth.uid == userId;
+    }
+
+    /*
+      Perfil principal del usuario.
+
+      Cada usuario solamente puede
+      acceder a su propio documento.
+    */
+
+    match /users/{userId} {
+      allow read, create, update, delete:
+        if esPropietario(userId);
+
+      /*
+        Todas las subcolecciones:
+
+        ingresos
+        gastos
+        movimientos
+        apartados
+        futuras colecciones personales
+      */
+
+      match /{document=**} {
+        allow read, write:
+          if esPropietario(userId);
+      }
+    }
+
+    /*
+      Todo lo que no esté expresamente
+      permitido arriba queda bloqueado.
+
+      Esto también bloquea las antiguas:
+
+      /ingresos
+      /gastos
+      /movimientos
+      /apartados
+    */
+  }
+}

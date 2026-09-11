@@ -7,9 +7,7 @@
 
 import {
   addDoc,
-  collection,
   deleteDoc,
-  doc,
   getDocs,
   serverTimestamp,
   updateDoc,
@@ -38,8 +36,13 @@ import {
 } from "@mui/material";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+  userDoc,
+} from "../services/userData";
 
 import {
   calcularSemanal,
@@ -82,6 +85,10 @@ const formularioInicial = {
 };
 
 export default function Ingresos() {
+  const {
+    user,
+  } = useAuth();
+
   const [
     ingresos,
     setIngresos,
@@ -114,12 +121,6 @@ export default function Ingresos() {
     setError,
   ] = useState("");
 
-  /*
-  ========================================
-  FILTROS
-  ========================================
-  */
-
   const [
     busqueda,
     setBusqueda,
@@ -140,12 +141,6 @@ export default function Ingresos() {
     setFiltroFrecuencia,
   ] = useState("");
 
-  /*
-  ========================================
-  CARGAR INGRESOS
-  ========================================
-  */
-
   const cargarIngresos =
     useCallback(async () => {
       try {
@@ -153,8 +148,8 @@ export default function Ingresos() {
 
         const snapshot =
           await getDocs(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "ingresos"
             )
           );
@@ -178,17 +173,11 @@ export default function Ingresos() {
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [user.uid]);
 
   useEffect(() => {
     cargarIngresos();
   }, [cargarIngresos]);
-
-  /*
-  ========================================
-  FORMULARIO
-  ========================================
-  */
 
   const manejarCambio = (
     campo,
@@ -266,8 +255,8 @@ export default function Ingresos() {
 
         if (editandoId) {
           await updateDoc(
-            doc(
-              db,
+            userDoc(
+              user.uid,
               "ingresos",
               editandoId
             ),
@@ -275,8 +264,8 @@ export default function Ingresos() {
           );
         } else {
           await addDoc(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "ingresos"
             ),
             {
@@ -301,12 +290,6 @@ export default function Ingresos() {
         setGuardando(false);
       }
     };
-
-  /*
-  ========================================
-  EDITAR
-  ========================================
-  */
 
   const editarIngreso = (
     ingreso
@@ -343,12 +326,6 @@ export default function Ingresos() {
     });
   };
 
-  /*
-  ========================================
-  ELIMINAR
-  ========================================
-  */
-
   const eliminarIngreso =
     async (ingreso) => {
       const confirmar =
@@ -362,8 +339,8 @@ export default function Ingresos() {
 
       try {
         await deleteDoc(
-          doc(
-            db,
+          userDoc(
+            user.uid,
             "ingresos",
             ingreso.id
           )
@@ -378,12 +355,6 @@ export default function Ingresos() {
         );
       }
     };
-
-  /*
-  ========================================
-  FILTRADO
-  ========================================
-  */
 
   const ingresosFiltrados =
     useMemo(() => {
@@ -442,12 +413,6 @@ export default function Ingresos() {
       filtroFrecuencia,
     ]);
 
-  /*
-  ========================================
-  RESUMEN
-  ========================================
-  */
-
   const resumen =
     useMemo(() => {
       const resultado = {
@@ -496,17 +461,10 @@ export default function Ingresos() {
     return (
       <Box
         sx={{
-          minHeight:
-            "70vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
+          minHeight: "70vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <CircularProgress />
@@ -522,27 +480,17 @@ export default function Ingresos() {
           sm: 3,
           lg: 4,
         },
-
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      {/* ===================================
-          ENCABEZADO
-      =================================== */}
-
-      <Box
-        sx={{
-          mb: 3,
-        }}
-      >
+      <Box sx={{ mb: 3 }}>
         <Typography
           sx={{
             fontSize: {
               xs: 29,
               md: 34,
             },
-
             fontWeight: 800,
           }}
         >
@@ -551,45 +499,30 @@ export default function Ingresos() {
 
         <Typography
           color="text.secondary"
-          sx={{
-            mt: 0.5,
-          }}
+          sx={{ mt: 0.5 }}
         >
-          Registra de dónde entra
-          tu dinero y cuánto
-          representa realmente
-          cada semana.
+          Registra de dónde entra tu
+          dinero y cuánto representa
+          realmente cada semana.
         </Typography>
       </Box>
-
-      {/* ===================================
-          ERROR
-      =================================== */}
 
       {error && (
         <Alert
           severity="error"
           sx={{
             mb: 3,
-            borderRadius:
-              "16px",
+            borderRadius: "16px",
           }}
         >
           {error}
         </Alert>
       )}
 
-      {/* ===================================
-          FORMULARIO
-      =================================== */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
-
           border:
             editandoId
               ? "1px solid #CDEFE3"
@@ -606,20 +539,12 @@ export default function Ingresos() {
         >
           <Box
             sx={{
-              display:
-                "flex",
-
+              display: "flex",
               justifyContent:
                 "space-between",
-
-              alignItems:
-                "center",
-
-              flexWrap:
-                "wrap",
-
+              alignItems: "center",
+              flexWrap: "wrap",
               gap: 1,
-
               mb: 2.5,
             }}
           >
@@ -638,9 +563,8 @@ export default function Ingresos() {
                   color="text.secondary"
                   fontSize={13}
                 >
-                  Estás modificando
-                  un registro
-                  existente.
+                  Estás modificando un
+                  registro existente.
                 </Typography>
               )}
             </Box>
@@ -662,26 +586,17 @@ export default function Ingresos() {
           >
             <Box
               sx={{
-                display:
-                  "grid",
-
-                gridTemplateColumns:
-                  {
-                    xs:
-                      "1fr",
-
-                    sm:
-                      "repeat(2, 1fr)",
-
-                    lg:
-                      "repeat(5, 1fr)",
-                  },
-
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm:
+                    "repeat(2, 1fr)",
+                  lg:
+                    "repeat(5, 1fr)",
+                },
                 gap: 2,
               }}
             >
-              {/* LUGAR */}
-
               <FormControl fullWidth>
                 <InputLabel>
                   Lugar
@@ -697,8 +612,7 @@ export default function Ingresos() {
                   ) =>
                     manejarCambio(
                       "lugar",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -715,8 +629,6 @@ export default function Ingresos() {
                 </Select>
               </FormControl>
 
-              {/* FUENTE */}
-
               <FormControl fullWidth>
                 <InputLabel>
                   Fuente
@@ -732,8 +644,7 @@ export default function Ingresos() {
                   ) =>
                     manejarCambio(
                       "fuente",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -750,8 +661,6 @@ export default function Ingresos() {
                 </Select>
               </FormControl>
 
-              {/* NOMBRE */}
-
               <TextField
                 label="Nombre"
                 value={
@@ -762,15 +671,12 @@ export default function Ingresos() {
                 ) =>
                   manejarCambio(
                     "nombre",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="Ej. Consultas"
                 fullWidth
               />
-
-              {/* MONTO */}
 
               <TextField
                 label="Monto"
@@ -783,8 +689,7 @@ export default function Ingresos() {
                 ) =>
                   manejarCambio(
                     "monto",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 inputProps={{
@@ -793,8 +698,6 @@ export default function Ingresos() {
                 }}
                 fullWidth
               />
-
-              {/* FRECUENCIA */}
 
               <FormControl fullWidth>
                 <InputLabel>
@@ -811,26 +714,17 @@ export default function Ingresos() {
                   ) =>
                     manejarCambio(
                       "frecuencia",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
                   {frecuencias.map(
-                    (
-                      frecuencia
-                    ) => (
+                    (frecuencia) => (
                       <MenuItem
-                        key={
-                          frecuencia
-                        }
-                        value={
-                          frecuencia
-                        }
+                        key={frecuencia}
+                        value={frecuencia}
                       >
-                        {
-                          frecuencia
-                        }
+                        {frecuencia}
                       </MenuItem>
                     )
                   )}
@@ -840,24 +734,17 @@ export default function Ingresos() {
 
             <Box
               sx={{
-                display:
-                  "flex",
-
+                display: "flex",
                 gap: 1.5,
-
                 mt: 2.5,
-
-                flexWrap:
-                  "wrap",
+                flexWrap: "wrap",
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
                 color="success"
-                disabled={
-                  guardando
-                }
+                disabled={guardando}
               >
                 {guardando
                   ? "Guardando..."
@@ -881,44 +768,30 @@ export default function Ingresos() {
         </CardContent>
       </Card>
 
-      {/* ===================================
-          RESUMEN
-      =================================== */}
-
       <Box
         sx={{
           display: "grid",
-
-          gridTemplateColumns:
-            {
-              xs: "1fr",
-
-              sm:
-                "repeat(2, 1fr)",
-
-              lg:
-                "repeat(4, 1fr)",
-            },
-
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
           gap: 2,
-
           mb: 3,
         }}
       >
         <MiniResumen
           titulo="Ingreso semanal"
-          valor={
-            resumen.total
-          }
+          valor={resumen.total}
           icono="💰"
           color="#10B981"
         />
 
         <MiniResumen
           titulo="Casa"
-          valor={
-            resumen.Casa
-          }
+          valor={resumen.Casa}
           icono="🏠"
         />
 
@@ -932,73 +805,48 @@ export default function Ingresos() {
 
         <MiniResumen
           titulo="Extras"
-          valor={
-            resumen.Extras
-          }
+          valor={resumen.Extras}
           icono="⭐"
         />
       </Box>
 
-      {/* ===================================
-          FILTROS
-      =================================== */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
         }}
       >
-        <CardContent
-          sx={{
-            p: 2.5,
-          }}
-        >
+        <CardContent sx={{ p: 2.5 }}>
           <Typography
             fontWeight={800}
-            sx={{
-              mb: 2,
-            }}
+            sx={{ mb: 2 }}
           >
             Buscar y filtrar
           </Typography>
 
           <Box
             sx={{
-              display:
-                "grid",
-
-              gridTemplateColumns:
-                {
-                  xs:
-                    "1fr",
-
-                  md:
-                    "2fr repeat(3, 1fr)",
-                },
-
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                md:
+                  "2fr repeat(3, 1fr)",
+              },
               gap: 1.5,
             }}
           >
             <TextField
               label="Buscar ingreso"
               placeholder="Ej. consultas, sueldo..."
-              value={
-                busqueda
-              }
+              value={busqueda}
               onChange={(
                 event
               ) =>
                 setBusqueda(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
             />
-
-            {/* FILTRO LUGAR */}
 
             <FormControl>
               <InputLabel>
@@ -1014,8 +862,7 @@ export default function Ingresos() {
                   event
                 ) =>
                   setFiltroLugar(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1036,8 +883,6 @@ export default function Ingresos() {
               </Select>
             </FormControl>
 
-            {/* FILTRO FUENTE */}
-
             <FormControl>
               <InputLabel>
                 Fuente
@@ -1052,8 +897,7 @@ export default function Ingresos() {
                   event
                 ) =>
                   setFiltroFuente(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1078,8 +922,6 @@ export default function Ingresos() {
               </Select>
             </FormControl>
 
-            {/* FILTRO FRECUENCIA */}
-
             <FormControl>
               <InputLabel>
                 Frecuencia
@@ -1094,8 +936,7 @@ export default function Ingresos() {
                   event
                 ) =>
                   setFiltroFrecuencia(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1104,20 +945,12 @@ export default function Ingresos() {
                 </MenuItem>
 
                 {frecuencias.map(
-                  (
-                    frecuencia
-                  ) => (
+                  (frecuencia) => (
                     <MenuItem
-                      key={
-                        frecuencia
-                      }
-                      value={
-                        frecuencia
-                      }
+                      key={frecuencia}
+                      value={frecuencia}
                     >
-                      {
-                        frecuencia
-                      }
+                      {frecuencia}
                     </MenuItem>
                   )
                 )}
@@ -1127,20 +960,12 @@ export default function Ingresos() {
 
           <Box
             sx={{
-              display:
-                "flex",
-
+              display: "flex",
               justifyContent:
                 "space-between",
-
-              alignItems:
-                "center",
-
-              flexWrap:
-                "wrap",
-
+              alignItems: "center",
+              flexWrap: "wrap",
               gap: 1,
-
               mt: 2,
             }}
           >
@@ -1148,7 +973,9 @@ export default function Ingresos() {
               color="text.secondary"
               fontSize={13}
             >
-              {ingresosFiltrados.length}{" "}
+              {
+                ingresosFiltrados.length
+              }{" "}
               {ingresosFiltrados.length ===
               1
                 ? "ingreso encontrado"
@@ -1167,22 +994,14 @@ export default function Ingresos() {
         </CardContent>
       </Card>
 
-      {/* ===================================
-          TABLA DESKTOP
-      =================================== */}
-
       <Card
         sx={{
           display: {
             xs: "none",
             md: "block",
           },
-
-          borderRadius:
-            "24px",
-
-          overflow:
-            "hidden",
+          borderRadius: "24px",
+          overflow: "hidden",
         }}
       >
         <TableContainer>
@@ -1223,20 +1042,14 @@ export default function Ingresos() {
               {ingresosFiltrados.map(
                 (ingreso) => (
                   <TableRow
-                    key={
-                      ingreso.id
-                    }
+                    key={ingreso.id}
                     hover
                   >
                     <TableCell>
                       <Typography
-                        fontWeight={
-                          700
-                        }
+                        fontWeight={700}
                       >
-                        {
-                          ingreso.nombre
-                        }
+                        {ingreso.nombre}
                       </Typography>
                     </TableCell>
 
@@ -1251,9 +1064,7 @@ export default function Ingresos() {
                     </TableCell>
 
                     <TableCell>
-                      {
-                        ingreso.lugar
-                      }
+                      {ingreso.lugar}
                     </TableCell>
 
                     <TableCell>
@@ -1263,16 +1074,12 @@ export default function Ingresos() {
                     </TableCell>
 
                     <TableCell>
-                      {
-                        ingreso.frecuencia
-                      }
+                      {ingreso.frecuencia}
                     </TableCell>
 
                     <TableCell>
                       <Typography
-                        fontWeight={
-                          700
-                        }
+                        fontWeight={700}
                         color="success.main"
                       >
                         {formatearDinero(
@@ -1320,9 +1127,7 @@ export default function Ingresos() {
                   <TableCell
                     colSpan={7}
                     align="center"
-                    sx={{
-                      py: 6,
-                    }}
+                    sx={{ py: 6 }}
                   >
                     <Typography
                       color="text.secondary"
@@ -1339,65 +1144,46 @@ export default function Ingresos() {
         </TableContainer>
       </Card>
 
-      {/* ===================================
-          MOBILE
-      =================================== */}
-
       <Box
         sx={{
           display: {
             xs: "grid",
             md: "none",
           },
-
           gap: 1.5,
         }}
       >
         {ingresosFiltrados.map(
           (ingreso) => (
             <Card
-              key={
-                ingreso.id
-              }
+              key={ingreso.id}
               sx={{
-                borderRadius:
-                  "20px",
+                borderRadius: "20px",
               }}
             >
               <CardContent>
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
                     alignItems:
                       "flex-start",
-
                     gap: 2,
                   }}
                 >
                   <Box>
                     <Typography
-                      fontWeight={
-                        800
-                      }
+                      fontWeight={800}
                     >
-                      {
-                        ingreso.nombre
-                      }
+                      {ingreso.nombre}
                     </Typography>
 
                     <Typography
                       color="text.secondary"
                       fontSize={13}
                     >
-                      {
-                        ingreso.lugar
-                      }{" "}
-                      ·{" "}
+                      {ingreso.lugar} ·{" "}
                       {ingreso.fuente ||
                         "Sin clasificar"}
                     </Typography>
@@ -1405,11 +1191,8 @@ export default function Ingresos() {
 
                   <Typography
                     sx={{
-                      fontWeight:
-                        900,
-
-                      color:
-                        "#10B981",
+                      fontWeight: 900,
+                      color: "#10B981",
                     }}
                   >
                     {formatearDinero(
@@ -1420,15 +1203,10 @@ export default function Ingresos() {
 
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     gap: 1,
-
                     mt: 2,
-
-                    flexWrap:
-                      "wrap",
+                    flexWrap: "wrap",
                   }}
                 >
                   <Chip
@@ -1450,21 +1228,13 @@ export default function Ingresos() {
                 <Box
                   sx={{
                     mt: 2,
-
                     pt: 2,
-
                     borderTop:
                       "1px solid #EEEFF3",
-
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
-                    alignItems:
-                      "center",
-
+                    alignItems: "center",
                     gap: 1,
                   }}
                 >
@@ -1473,14 +1243,11 @@ export default function Ingresos() {
                       color="text.secondary"
                       fontSize={11}
                     >
-                      Equivalente
-                      semanal
+                      Equivalente semanal
                     </Typography>
 
                     <Typography
-                      fontWeight={
-                        800
-                      }
+                      fontWeight={800}
                       color="success.main"
                     >
                       {formatearDinero(
@@ -1526,16 +1293,13 @@ export default function Ingresos() {
           0 && (
           <Card
             sx={{
-              borderRadius:
-                "20px",
+              borderRadius: "20px",
             }}
           >
             <CardContent
               sx={{
                 py: 5,
-
-                textAlign:
-                  "center",
+                textAlign: "center",
               }}
             >
               <Typography
@@ -1546,19 +1310,9 @@ export default function Ingresos() {
 
               <Typography
                 fontWeight={800}
-                sx={{
-                  mt: 1,
-                }}
+                sx={{ mt: 1 }}
               >
                 Sin resultados
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                fontSize={13}
-              >
-                Prueba modificando
-                los filtros.
               </Typography>
             </CardContent>
           </Card>
@@ -1567,12 +1321,6 @@ export default function Ingresos() {
     </Box>
   );
 }
-
-/*
-========================================
-TARJETA DE RESUMEN
-========================================
-*/
 
 function MiniResumen({
   titulo,
@@ -1583,21 +1331,16 @@ function MiniResumen({
   return (
     <Card
       sx={{
-        borderRadius:
-          "20px",
+        borderRadius: "20px",
       }}
     >
       <CardContent>
         <Box
           sx={{
-            display:
-              "flex",
-
+            display: "flex",
             justifyContent:
               "space-between",
-
-            alignItems:
-              "center",
+            alignItems: "center",
           }}
         >
           <Box>
@@ -1611,13 +1354,8 @@ function MiniResumen({
             <Typography
               sx={{
                 mt: 0.5,
-
-                fontSize:
-                  22,
-
-                fontWeight:
-                  900,
-
+                fontSize: 22,
+                fontWeight: 900,
                 color:
                   color ||
                   "text.primary",

@@ -1,32 +1,42 @@
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import {
   addDoc,
-  collection,
   deleteDoc,
-  doc,
   getDocs,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
 
 import {
+  Alert,
   Box,
   Button,
   Card,
   CardContent,
+  CircularProgress,
+  FormControl,
+  InputLabel,
   LinearProgress,
   MenuItem,
+  Select,
   TextField,
   Typography,
 } from "@mui/material";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+  userDoc,
+} from "../services/userData";
 
 import {
   formatearDinero,
@@ -45,31 +55,18 @@ const lugares = [
   "Extras",
 ];
 
+const formularioInicial = {
+  lugar: "Casa",
+  concepto: "",
+  montoObjetivo: "",
+  ahorrado: "",
+  fechaVencimiento: "",
+};
+
 export default function Apartados() {
-  const [
-    lugar,
-    setLugar,
-  ] = useState("Casa");
-
-  const [
-    concepto,
-    setConcepto,
-  ] = useState("");
-
-  const [
-    montoObjetivo,
-    setMontoObjetivo,
-  ] = useState("");
-
-  const [
-    ahorrado,
-    setAhorrado,
-  ] = useState("");
-
-  const [
-    fechaVencimiento,
-    setFechaVencimiento,
-  ] = useState("");
+  const {
+    user,
+  } = useAuth();
 
   const [
     apartados,
@@ -77,17 +74,36 @@ export default function Apartados() {
   ] = useState([]);
 
   const [
+    formulario,
+    setFormulario,
+  ] = useState(
+    formularioInicial
+  );
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
     guardando,
     setGuardando,
   ] = useState(false);
 
+  const [
+    error,
+    setError,
+  ] = useState("");
+
   const cargarApartados =
-    async () => {
+    useCallback(async () => {
       try {
+        setLoading(true);
+
         const snapshot =
           await getDocs(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "apartados"
             )
           );
@@ -95,155 +111,347 @@ export default function Apartados() {
         const lista =
           snapshot.docs.map(
             (documento) => ({
-              id:
-                documento.id,
-
+              id: documento.id,
               ...documento.data(),
             })
           );
 
         lista.sort(
           (a, b) =>
-            String(
+            (
               a.fechaVencimiento ||
-                ""
+              ""
             ).localeCompare(
-              String(
-                b.fechaVencimiento ||
-                  ""
-              )
+              b.fechaVencimiento ||
+              ""
             )
         );
 
         setApartados(lista);
-      } catch (error) {
-        console.error(error);
+        setError("");
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible cargar los apartados."
+        );
+      } finally {
+        setLoading(false);
       }
-    };
+    }, [user.uid]);
 
   useEffect(() => {
     cargarApartados();
-  }, []);
+  }, [cargarApartados]);
+
+  const manejarCambio = (
+    campo,
+    valor
+  ) => {
+    setFormulario(
+      (anterior) => ({
+        ...anterior,
+        [campo]: valor,
+      })
+    );
+  };
 
   const guardarApartado =
-    async () => {
+    async (event) => {
+      event.preventDefault();
+
+      const concepto =
+        formulario.concepto.trim();
+
+      const objetivo =
+        Number(
+          formulario.montoObjetivo
+        );
+
+      const ahorrado =
+        Number(
+          formulario.ahorrado ||
+            0
+        );
+
+      if (!concepto) {
+        setError(
+          "Escribe el concepto del apartado."
+        );
+
+        return;
+      }
+
       if (
-        !concepto.trim() ||
-        !montoObjetivo ||
-        !fechaVencimiento
+        !objetivo ||
+        objetivo <= 0
       ) {
+        setError(
+          "Ingresa un objetivo válido."
+        );
+
+        return;
+      }
+
+      if (
+        !formulario.fechaVencimiento
+      ) {
+        setError(
+          "Selecciona una fecha objetivo."
+        );
+
         return;
       }
 
       try {
         setGuardando(true);
+        setError("");
 
         await addDoc(
-          collection(
-            db,
+          userCollection(
+            user.uid,
             "apartados"
           ),
           {
-            lugar,
+            lugar:
+              formulario.lugar,
 
-            concepto:
-              concepto.trim(),
+            concepto,
 
             montoObjetivo:
-              Number(
-                montoObjetivo
-              ),
+              objetivo,
 
-            ahorrado:
-              Number(
-                ahorrado || 0
-              ),
+            ahorrado,
 
-            fechaVencimiento,
+            fechaVencimiento:
+              formulario.fechaVencimiento,
 
             activo: true,
 
             createdAt:
               serverTimestamp(),
+
+            updatedAt:
+              serverTimestamp(),
           }
         );
 
-        setConcepto("");
-        setMontoObjetivo("");
-        setAhorrado("");
-        setFechaVencimiento("");
+        setFormulario(
+          formularioInicial
+        );
 
         await cargarApartados();
-      } catch (error) {
-        console.error(error);
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible guardar el apartado."
+        );
       } finally {
         setGuardando(false);
       }
     };
 
-  const sumarAhorro =
+  const actualizarAhorrado =
     async (
       apartado,
-      cantidad
+      nuevoAhorrado
     ) => {
+      const objetivo =
+        Number(
+          apartado.montoObjetivo ||
+            0
+        );
+
       const valor =
-        Number(cantidad);
+        Math.min(
+          objetivo,
+          Math.max(
+            0,
+            Number(
+              nuevoAhorrado ||
+                0
+            )
+          )
+        );
+
+      try {
+        await updateDoc(
+          userDoc(
+            user.uid,
+            "apartados",
+            apartado.id
+          ),
+          {
+            ahorrado: valor,
+            updatedAt:
+              serverTimestamp(),
+          }
+        );
+
+        await cargarApartados();
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible actualizar el apartado."
+        );
+      }
+    };
+
+  const agregarSemanal =
+    async (apartado) => {
+      const semanal =
+        calcularApartadoSemanal(
+          apartado.montoObjetivo,
+          apartado.ahorrado,
+          apartado.fechaVencimiento
+        );
+
+      const actual =
+        Number(
+          apartado.ahorrado ||
+            0
+        );
+
+      await actualizarAhorrado(
+        apartado,
+        actual + semanal
+      );
+    };
+
+  const agregarOtraCantidad =
+    async (apartado) => {
+      const entrada =
+        window.prompt(
+          "¿Cuánto deseas agregar al apartado?"
+        );
 
       if (
-        !valor ||
-        valor <= 0
+        entrada === null
       ) {
         return;
       }
 
-      const nuevoAhorrado =
-        Math.min(
-          Number(
-            apartado.montoObjetivo ||
-              0
-          ),
-          Number(
-            apartado.ahorrado ||
-              0
-          ) + valor
+      const cantidad =
+        Number(entrada);
+
+      if (
+        !cantidad ||
+        cantidad <= 0
+      ) {
+        window.alert(
+          "Ingresa una cantidad válida."
         );
 
-      await updateDoc(
-        doc(
-          db,
-          "apartados",
-          apartado.id
-        ),
-        {
-          ahorrado:
-            nuevoAhorrado,
-        }
-      );
+        return;
+      }
 
-      cargarApartados();
+      const actual =
+        Number(
+          apartado.ahorrado ||
+            0
+        );
+
+      await actualizarAhorrado(
+        apartado,
+        actual + cantidad
+      );
     };
 
   const eliminarApartado =
-    async (id) => {
+    async (apartado) => {
       const confirmar =
         window.confirm(
-          "¿Eliminar este apartado?"
+          `¿Eliminar "${apartado.concepto}"?`
         );
 
       if (!confirmar) {
         return;
       }
 
-      await deleteDoc(
-        doc(
-          db,
-          "apartados",
-          id
-        )
+      try {
+        await deleteDoc(
+          userDoc(
+            user.uid,
+            "apartados",
+            apartado.id
+          )
+        );
+
+        await cargarApartados();
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible eliminar el apartado."
+        );
+      }
+    };
+
+  const resumen =
+    useMemo(() => {
+      let objetivo = 0;
+      let reservado = 0;
+      let pendiente = 0;
+      let semanal = 0;
+
+      apartados.forEach(
+        (apartado) => {
+          objetivo +=
+            Number(
+              apartado.montoObjetivo ||
+                0
+            );
+
+          reservado +=
+            Number(
+              apartado.ahorrado ||
+                0
+            );
+
+          pendiente +=
+            calcularPendienteApartado(
+              apartado.montoObjetivo,
+              apartado.ahorrado
+            );
+
+          if (
+            apartado.activo !==
+            false
+          ) {
+            semanal +=
+              calcularApartadoSemanal(
+                apartado.montoObjetivo,
+                apartado.ahorrado,
+                apartado.fechaVencimiento
+              );
+          }
+        }
       );
 
-      cargarApartados();
-    };
+      return {
+        objetivo,
+        reservado,
+        pendiente,
+        semanal,
+      };
+    }, [apartados]);
+
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          minHeight: "70vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -253,14 +461,16 @@ export default function Apartados() {
           sm: 3,
           lg: 4,
         },
-
-        maxWidth: 1350,
+        maxWidth: 1400,
         mx: "auto",
       }}
     >
       <Typography
         sx={{
-          fontSize: 32,
+          fontSize: {
+            xs: 29,
+            md: 34,
+          },
           fontWeight: 800,
         }}
       >
@@ -274,10 +484,61 @@ export default function Apartados() {
           mb: 3,
         }}
       >
-        Prepárate hoy para
-        los gastos que sabes
-        que llegarán después.
+        Prepárate para gastos
+        futuros sin comprometer tu
+        dinero disponible.
       </Typography>
+
+      {error && (
+        <Alert
+          severity="error"
+          sx={{
+            mb: 3,
+            borderRadius: "16px",
+          }}
+        >
+          {error}
+        </Alert>
+      )}
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
+          gap: 2,
+          mb: 3,
+        }}
+      >
+        <Resumen
+          titulo="Objetivo"
+          valor={resumen.objetivo}
+        />
+
+        <Resumen
+          titulo="Ya reservado"
+          valor={
+            resumen.reservado
+          }
+        />
+
+        <Resumen
+          titulo="Pendiente"
+          valor={
+            resumen.pendiente
+          }
+        />
+
+        <Resumen
+          titulo="Reserva semanal"
+          valor={resumen.semanal}
+        />
+      </Box>
 
       <Card
         sx={{
@@ -287,130 +548,151 @@ export default function Apartados() {
       >
         <CardContent
           sx={{
-            p: 3,
+            p: {
+              xs: 2.5,
+              md: 3,
+            },
           }}
         >
           <Typography
-            sx={{
-              fontSize: 18,
-              fontWeight: 800,
-              mb: 3,
-            }}
+            fontWeight={800}
+            fontSize={19}
+            sx={{ mb: 2.5 }}
           >
             Nuevo apartado
           </Typography>
 
           <Box
-            sx={{
-              display: "grid",
-
-              gridTemplateColumns:
-                {
-                  xs: "1fr",
-                  md:
-                    "repeat(2, 1fr)",
-                },
-
-              gap: 2,
-            }}
-          >
-            <TextField
-              select
-              label="Espacio"
-              value={lugar}
-              onChange={(e) =>
-                setLugar(
-                  e.target.value
-                )
-              }
-            >
-              {lugares.map(
-                (item) => (
-                  <MenuItem
-                    key={item}
-                    value={item}
-                  >
-                    {item}
-                  </MenuItem>
-                )
-              )}
-            </TextField>
-
-            <TextField
-              label="Concepto"
-              placeholder="Ej. Seguro del auto"
-              value={concepto}
-              onChange={(e) =>
-                setConcepto(
-                  e.target.value
-                )
-              }
-            />
-
-            <TextField
-              label="Monto objetivo"
-              type="number"
-              value={
-                montoObjetivo
-              }
-              onChange={(e) =>
-                setMontoObjetivo(
-                  e.target.value
-                )
-              }
-            />
-
-            <TextField
-              label="Ya reservado"
-              type="number"
-              value={ahorrado}
-              onChange={(e) =>
-                setAhorrado(
-                  e.target.value
-                )
-              }
-            />
-
-            <TextField
-              label="Fecha límite"
-              type="date"
-              value={
-                fechaVencimiento
-              }
-              onChange={(e) =>
-                setFechaVencimiento(
-                  e.target.value
-                )
-              }
-              slotProps={{
-                inputLabel: {
-                  shrink: true,
-                },
-              }}
-              sx={{
-                gridColumn: {
-                  md: "span 2",
-                },
-              }}
-            />
-          </Box>
-
-          <Button
-            variant="contained"
-            onClick={
+            component="form"
+            onSubmit={
               guardarApartado
             }
-            disabled={
-              guardando
-            }
-            sx={{
-              mt: 3,
-            }}
           >
-            {guardando
-              ? "Guardando..."
-              : "Crear apartado"}
-          </Button>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm:
+                    "repeat(2, 1fr)",
+                  lg:
+                    "repeat(5, 1fr)",
+                },
+                gap: 2,
+              }}
+            >
+              <FormControl>
+                <InputLabel>
+                  Lugar
+                </InputLabel>
+
+                <Select
+                  label="Lugar"
+                  value={
+                    formulario.lugar
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    manejarCambio(
+                      "lugar",
+                      event.target.value
+                    )
+                  }
+                >
+                  {lugares.map(
+                    (lugar) => (
+                      <MenuItem
+                        key={lugar}
+                        value={lugar}
+                      >
+                        {lugar}
+                      </MenuItem>
+                    )
+                  )}
+                </Select>
+              </FormControl>
+
+              <TextField
+                label="Concepto"
+                value={
+                  formulario.concepto
+                }
+                onChange={(
+                  event
+                ) =>
+                  manejarCambio(
+                    "concepto",
+                    event.target.value
+                  )
+                }
+              />
+
+              <TextField
+                label="Monto objetivo"
+                type="number"
+                value={
+                  formulario.montoObjetivo
+                }
+                onChange={(
+                  event
+                ) =>
+                  manejarCambio(
+                    "montoObjetivo",
+                    event.target.value
+                  )
+                }
+              />
+
+              <TextField
+                label="Ya reservado"
+                type="number"
+                value={
+                  formulario.ahorrado
+                }
+                onChange={(
+                  event
+                ) =>
+                  manejarCambio(
+                    "ahorrado",
+                    event.target.value
+                  )
+                }
+              />
+
+              <TextField
+                label="Fecha objetivo"
+                type="date"
+                value={
+                  formulario.fechaVencimiento
+                }
+                onChange={(
+                  event
+                ) =>
+                  manejarCambio(
+                    "fechaVencimiento",
+                    event.target.value
+                  )
+                }
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Box>
+
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={guardando}
+              sx={{
+                mt: 2.5,
+              }}
+            >
+              {guardando
+                ? "Guardando..."
+                : "Crear apartado"}
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
@@ -422,35 +704,23 @@ export default function Apartados() {
       >
         {apartados.map(
           (apartado) => {
-            const objetivo =
-              Number(
-                apartado.montoObjetivo ||
-                  0
-              );
-
-            const reservado =
-              Number(
-                apartado.ahorrado ||
-                  0
-              );
-
             const pendiente =
               calcularPendienteApartado(
-                objetivo,
-                reservado
-              );
-
-            const semanal =
-              calcularApartadoSemanal(
-                objetivo,
-                reservado,
-                apartado.fechaVencimiento
+                apartado.montoObjetivo,
+                apartado.ahorrado
               );
 
             const porcentaje =
               calcularPorcentajeApartado(
-                objetivo,
-                reservado
+                apartado.montoObjetivo,
+                apartado.ahorrado
+              );
+
+            const semanal =
+              calcularApartadoSemanal(
+                apartado.montoObjetivo,
+                apartado.ahorrado,
+                apartado.fechaVencimiento
               );
 
             const dias =
@@ -458,69 +728,35 @@ export default function Apartados() {
                 apartado.fechaVencimiento
               );
 
-            const completado =
+            const completo =
               pendiente <= 0;
 
             return (
               <Card
-                key={
-                  apartado.id
-                }
+                key={apartado.id}
                 sx={{
-                  borderRadius:
-                    "24px",
+                  borderRadius: "24px",
                 }}
               >
                 <CardContent
-                  sx={{
-                    p: {
-                      xs: 2.5,
-                      md: 3,
-                    },
-                  }}
+                  sx={{ p: 3 }}
                 >
                   <Box
                     sx={{
-                      display:
-                        "flex",
-
-                      flexDirection:
-                        {
-                          xs: "column",
-                          md: "row",
-                        },
-
+                      display: "flex",
+                      flexDirection: {
+                        xs: "column",
+                        md: "row",
+                      },
                       justifyContent:
                         "space-between",
-
                       gap: 2,
                     }}
                   >
-                    <Box
-                      sx={{
-                        flex: 1,
-                      }}
-                    >
+                    <Box>
                       <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                        fontWeight={700}
-                      >
-                        {
-                          apartado.lugar
-                        }
-                      </Typography>
-
-                      <Typography
-                        sx={{
-                          fontWeight:
-                            800,
-
-                          fontSize:
-                            21,
-
-                          mt: 0.5,
-                        }}
+                        fontSize={20}
+                        fontWeight={800}
                       >
                         {
                           apartado.concepto
@@ -530,47 +766,36 @@ export default function Apartados() {
                       <Typography
                         color="text.secondary"
                         fontSize={13}
-                        sx={{
-                          mt: 0.5,
-                        }}
                       >
-                        Fecha límite:{" "}
-                        {
-                          apartado.fechaVencimiento
-                        }
+                        {apartado.lugar} ·{" "}
+                        {dias < 0 &&
+                        !completo
+                          ? "Vencido"
+                          : completo
+                            ? "Completo"
+                            : `${dias} días restantes`}
                       </Typography>
                     </Box>
 
-                    <Box
-                      sx={{
-                        textAlign: {
-                          xs: "left",
-                          md: "right",
-                        },
-                      }}
-                    >
+                    <Box>
                       <Typography
                         color="text.secondary"
                         fontSize={12}
                       >
-                        Apartar por semana
+                        Reserva recomendada
+                        semanal
                       </Typography>
 
                       <Typography
-                        sx={{
-                          fontWeight:
-                            800,
-
-                          fontSize:
-                            24,
-
-                          color:
-                            completado
-                              ? "#10B981"
-                              : "#6D5DFB",
-                        }}
+                        fontWeight={900}
+                        fontSize={22}
+                        color={
+                          completo
+                            ? "success.main"
+                            : "primary.main"
+                        }
                       >
-                        {completado
+                        {completo
                           ? "Completo"
                           : formatearDinero(
                               semanal
@@ -579,155 +804,74 @@ export default function Apartados() {
                     </Box>
                   </Box>
 
-                  <Box
+                  <LinearProgress
+                    variant="determinate"
+                    value={porcentaje}
                     sx={{
                       mt: 3,
+                      mb: 2,
+                      height: 10,
+                      borderRadius: 10,
+                    }}
+                  />
+
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs:
+                          "repeat(2, 1fr)",
+                        md:
+                          "repeat(4, 1fr)",
+                      },
+                      gap: 2,
                     }}
                   >
-                    <LinearProgress
-                      variant="determinate"
-                      value={
+                    <Dato
+                      titulo="Objetivo"
+                      valor={formatearDinero(
+                        apartado.montoObjetivo
+                      )}
+                    />
+
+                    <Dato
+                      titulo="Ya reservado"
+                      valor={formatearDinero(
+                        apartado.ahorrado
+                      )}
+                    />
+
+                    <Dato
+                      titulo="Pendiente"
+                      valor={formatearDinero(
+                        pendiente
+                      )}
+                    />
+
+                    <Dato
+                      titulo="Avance"
+                      valor={`${Math.round(
                         porcentaje
-                      }
-                      sx={{
-                        height: 10,
-                        borderRadius:
-                          10,
-
-                        backgroundColor:
-                          "#ECEEF3",
-
-                        "& .MuiLinearProgress-bar":
-                          {
-                            borderRadius:
-                              10,
-
-                            backgroundColor:
-                              completado
-                                ? "#10B981"
-                                : "#6D5DFB",
-                          },
-                      }}
+                      )}%`}
                     />
                   </Box>
 
                   <Box
                     sx={{
-                      display:
-                        "grid",
-
-                      gridTemplateColumns:
-                        {
-                          xs:
-                            "repeat(2, 1fr)",
-
-                          md:
-                            "repeat(4, 1fr)",
-                        },
-
-                      gap: 2,
-
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 1,
                       mt: 2.5,
                     }}
                   >
-                    <Box>
-                      <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                      >
-                        Objetivo
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {formatearDinero(
-                          objetivo
-                        )}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                      >
-                        Reservado
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {formatearDinero(
-                          reservado
-                        )}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                      >
-                        Pendiente
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {formatearDinero(
-                          pendiente
-                        )}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                      >
-                        Tiempo
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                        color={
-                          dias < 0 &&
-                          !completado
-                            ? "error.main"
-                            : "text.primary"
-                        }
-                      >
-                        {completado
-                          ? "Listo"
-                          : dias < 0
-                            ? "Vencido"
-                            : `${dias} días`}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      display:
-                        "flex",
-
-                      gap: 1,
-
-                      flexWrap:
-                        "wrap",
-
-                      mt: 3,
-                    }}
-                  >
-                    {!completado && (
+                    {!completo && (
                       <>
                         <Button
-                          variant="outlined"
+                          size="small"
+                          variant="contained"
                           onClick={() =>
-                            sumarAhorro(
-                              apartado,
-                              semanal
+                            agregarSemanal(
+                              apartado
                             )
                           }
                         >
@@ -735,22 +879,13 @@ export default function Apartados() {
                         </Button>
 
                         <Button
+                          size="small"
                           variant="outlined"
-                          onClick={() => {
-                            const cantidad =
-                              window.prompt(
-                                "¿Cuánto deseas agregar al apartado?"
-                              );
-
-                            if (
-                              cantidad
-                            ) {
-                              sumarAhorro(
-                                apartado,
-                                cantidad
-                              );
-                            }
-                          }}
+                          onClick={() =>
+                            agregarOtraCantidad(
+                              apartado
+                            )
+                          }
                         >
                           + Otra cantidad
                         </Button>
@@ -758,10 +893,11 @@ export default function Apartados() {
                     )}
 
                     <Button
+                      size="small"
                       color="error"
                       onClick={() =>
                         eliminarApartado(
-                          apartado.id
+                          apartado
                         )
                       }
                     >
@@ -778,49 +914,88 @@ export default function Apartados() {
           0 && (
           <Card
             sx={{
-              borderRadius:
-                "24px",
+              borderRadius: "24px",
             }}
           >
             <CardContent
               sx={{
                 py: 6,
-                textAlign:
-                  "center",
+                textAlign: "center",
               }}
             >
               <Typography
-                sx={{
-                  fontSize: 30,
-                  mb: 1,
-                }}
+                fontSize={30}
               >
-                🪴
+                🎯
               </Typography>
 
               <Typography
                 fontWeight={800}
+                sx={{ mt: 1 }}
               >
                 Todavía no tienes
                 apartados
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                fontSize={13}
-                sx={{
-                  mt: 0.5,
-                }}
-              >
-                Crea uno para un
-                gasto importante
-                que llegará en el
-                futuro.
               </Typography>
             </CardContent>
           </Card>
         )}
       </Box>
+    </Box>
+  );
+}
+
+function Resumen({
+  titulo,
+  valor,
+}) {
+  return (
+    <Card
+      sx={{
+        borderRadius: "20px",
+      }}
+    >
+      <CardContent>
+        <Typography
+          color="text.secondary"
+          fontSize={13}
+        >
+          {titulo}
+        </Typography>
+
+        <Typography
+          sx={{
+            mt: 0.5,
+            fontWeight: 900,
+            fontSize: 22,
+          }}
+        >
+          {formatearDinero(
+            valor
+          )}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Dato({
+  titulo,
+  valor,
+}) {
+  return (
+    <Box>
+      <Typography
+        color="text.secondary"
+        fontSize={12}
+      >
+        {titulo}
+      </Typography>
+
+      <Typography
+        fontWeight={700}
+      >
+        {valor}
+      </Typography>
     </Box>
   );
 }

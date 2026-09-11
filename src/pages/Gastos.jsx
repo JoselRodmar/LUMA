@@ -7,9 +7,7 @@
 
 import {
   addDoc,
-  collection,
   deleteDoc,
-  doc,
   getDocs,
   serverTimestamp,
   updateDoc,
@@ -38,8 +36,13 @@ import {
 } from "@mui/material";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+  userDoc,
+} from "../services/userData";
 
 import {
   calcularSemanal,
@@ -94,6 +97,10 @@ const formularioInicial = {
 };
 
 export default function Gastos() {
+  const {
+    user,
+  } = useAuth();
+
   const [
     gastos,
     setGastos,
@@ -126,12 +133,6 @@ export default function Gastos() {
     setError,
   ] = useState("");
 
-  /*
-  ========================================
-  FILTROS
-  ========================================
-  */
-
   const [
     busqueda,
     setBusqueda,
@@ -152,12 +153,6 @@ export default function Gastos() {
     setFiltroCategoria,
   ] = useState("");
 
-  /*
-  ========================================
-  CARGAR GASTOS
-  ========================================
-  */
-
   const cargarGastos =
     useCallback(async () => {
       try {
@@ -165,8 +160,8 @@ export default function Gastos() {
 
         const snapshot =
           await getDocs(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "gastos"
             )
           );
@@ -180,7 +175,6 @@ export default function Gastos() {
           );
 
         setGastos(lista);
-
         setError("");
       } catch (err) {
         console.error(err);
@@ -191,17 +185,11 @@ export default function Gastos() {
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [user.uid]);
 
   useEffect(() => {
     cargarGastos();
   }, [cargarGastos]);
-
-  /*
-  ========================================
-  FORMULARIO
-  ========================================
-  */
 
   const manejarCambio = (
     campo,
@@ -282,8 +270,8 @@ export default function Gastos() {
 
         if (editandoId) {
           await updateDoc(
-            doc(
-              db,
+            userDoc(
+              user.uid,
               "gastos",
               editandoId
             ),
@@ -291,8 +279,8 @@ export default function Gastos() {
           );
         } else {
           await addDoc(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "gastos"
             ),
             {
@@ -317,12 +305,6 @@ export default function Gastos() {
         setGuardando(false);
       }
     };
-
-  /*
-  ========================================
-  EDITAR
-  ========================================
-  */
 
   const editarGasto = (
     gasto
@@ -363,12 +345,6 @@ export default function Gastos() {
     });
   };
 
-  /*
-  ========================================
-  ELIMINAR
-  ========================================
-  */
-
   const eliminarGasto =
     async (gasto) => {
       const confirmar =
@@ -382,8 +358,8 @@ export default function Gastos() {
 
       try {
         await deleteDoc(
-          doc(
-            db,
+          userDoc(
+            user.uid,
             "gastos",
             gasto.id
           )
@@ -399,12 +375,6 @@ export default function Gastos() {
       }
     };
 
-  /*
-  ========================================
-  GASTOS FILTRADOS
-  ========================================
-  */
-
   const gastosFiltrados =
     useMemo(() => {
       const texto =
@@ -418,10 +388,14 @@ export default function Gastos() {
             gasto.categoria ||
             "Sin categoría";
 
+          const concepto =
+            gasto.concepto ||
+            "";
+
           const coincideBusqueda =
             !texto ||
-            gasto.concepto
-              ?.toLowerCase()
+            concepto
+              .toLowerCase()
               .includes(texto) ||
             categoria
               .toLowerCase()
@@ -457,12 +431,6 @@ export default function Gastos() {
       filtroLugar,
       filtroCategoria,
     ]);
-
-  /*
-  ========================================
-  RESUMEN
-  ========================================
-  */
 
   const resumen =
     useMemo(() => {
@@ -511,17 +479,10 @@ export default function Gastos() {
     return (
       <Box
         sx={{
-          minHeight:
-            "70vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
+          minHeight: "70vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <CircularProgress />
@@ -537,13 +498,10 @@ export default function Gastos() {
           sm: 3,
           lg: 4,
         },
-
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      {/* ENCABEZADO */}
-
       <Box sx={{ mb: 3 }}>
         <Typography
           sx={{
@@ -551,7 +509,6 @@ export default function Gastos() {
               xs: 29,
               md: 34,
             },
-
             fontWeight: 800,
           }}
         >
@@ -562,10 +519,9 @@ export default function Gastos() {
           color="text.secondary"
           sx={{ mt: 0.5 }}
         >
-          Organiza lo que sale de
-          tu dinero y entiende
-          exactamente en qué se
-          está utilizando.
+          Organiza lo que sale de tu
+          dinero y entiende exactamente
+          en qué se está utilizando.
         </Typography>
       </Box>
 
@@ -574,23 +530,17 @@ export default function Gastos() {
           severity="error"
           sx={{
             mb: 3,
-            borderRadius:
-              "16px",
+            borderRadius: "16px",
           }}
         >
           {error}
         </Alert>
       )}
 
-      {/* FORMULARIO */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
-
           border:
             editandoId
               ? "1px solid #DCD5FF"
@@ -607,20 +557,12 @@ export default function Gastos() {
         >
           <Box
             sx={{
-              display:
-                "flex",
-
+              display: "flex",
               justifyContent:
                 "space-between",
-
-              alignItems:
-                "center",
-
-              flexWrap:
-                "wrap",
-
+              alignItems: "center",
+              flexWrap: "wrap",
               gap: 1,
-
               mb: 2.5,
             }}
           >
@@ -639,9 +581,8 @@ export default function Gastos() {
                   color="text.secondary"
                   fontSize={13}
                 >
-                  Estás modificando
-                  un registro
-                  existente.
+                  Estás modificando un
+                  registro existente.
                 </Typography>
               )}
             </Box>
@@ -663,21 +604,14 @@ export default function Gastos() {
           >
             <Box
               sx={{
-                display:
-                  "grid",
-
-                gridTemplateColumns:
-                  {
-                    xs:
-                      "1fr",
-
-                    sm:
-                      "repeat(2, 1fr)",
-
-                    lg:
-                      "repeat(3, 1fr)",
-                  },
-
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm:
+                    "repeat(2, 1fr)",
+                  lg:
+                    "repeat(3, 1fr)",
+                },
                 gap: 2,
               }}
             >
@@ -696,8 +630,7 @@ export default function Gastos() {
                   ) =>
                     manejarCambio(
                       "tipo",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -729,8 +662,7 @@ export default function Gastos() {
                   ) =>
                     manejarCambio(
                       "lugar",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -762,20 +694,15 @@ export default function Gastos() {
                   ) =>
                     manejarCambio(
                       "categoria",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
                   {categorias.map(
                     (categoria) => (
                       <MenuItem
-                        key={
-                          categoria
-                        }
-                        value={
-                          categoria
-                        }
+                        key={categoria}
+                        value={categoria}
                       >
                         {categoria}
                       </MenuItem>
@@ -794,8 +721,7 @@ export default function Gastos() {
                 ) =>
                   manejarCambio(
                     "concepto",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="Ej. Internet"
@@ -813,8 +739,7 @@ export default function Gastos() {
                 ) =>
                   manejarCambio(
                     "monto",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 inputProps={{
@@ -839,26 +764,17 @@ export default function Gastos() {
                   ) =>
                     manejarCambio(
                       "frecuencia",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
                   {frecuencias.map(
-                    (
-                      frecuencia
-                    ) => (
+                    (frecuencia) => (
                       <MenuItem
-                        key={
-                          frecuencia
-                        }
-                        value={
-                          frecuencia
-                        }
+                        key={frecuencia}
+                        value={frecuencia}
                       >
-                        {
-                          frecuencia
-                        }
+                        {frecuencia}
                       </MenuItem>
                     )
                   )}
@@ -868,23 +784,16 @@ export default function Gastos() {
 
             <Box
               sx={{
-                display:
-                  "flex",
-
+                display: "flex",
                 gap: 1.5,
-
                 mt: 2.5,
-
-                flexWrap:
-                  "wrap",
+                flexWrap: "wrap",
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
-                disabled={
-                  guardando
-                }
+                disabled={guardando}
               >
                 {guardando
                   ? "Guardando..."
@@ -908,38 +817,28 @@ export default function Gastos() {
         </CardContent>
       </Card>
 
-      {/* RESUMEN */}
-
       <Box
         sx={{
           display: "grid",
-
-          gridTemplateColumns:
-            {
-              xs: "1fr",
-              sm:
-                "repeat(3, 1fr)",
-            },
-
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(3, 1fr)",
+          },
           gap: 2,
-
           mb: 3,
         }}
       >
         <MiniResumen
           titulo="Gasto semanal"
-          valor={
-            resumen.total
-          }
+          valor={resumen.total}
           icono="🧾"
           color="#EF4444"
         />
 
         <MiniResumen
           titulo="Gastos fijos"
-          valor={
-            resumen.fijos
-          }
+          valor={resumen.fijos}
           icono="📌"
         />
 
@@ -952,19 +851,13 @@ export default function Gastos() {
         />
       </Box>
 
-      {/* FILTROS */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
         }}
       >
-        <CardContent
-          sx={{ p: 2.5 }}
-        >
+        <CardContent sx={{ p: 2.5 }}>
           <Typography
             fontWeight={800}
             sx={{ mb: 2 }}
@@ -975,30 +868,23 @@ export default function Gastos() {
           <Box
             sx={{
               display: "grid",
-
-              gridTemplateColumns:
-                {
-                  xs: "1fr",
-
-                  md:
-                    "2fr repeat(3, 1fr)",
-                },
-
+              gridTemplateColumns: {
+                xs: "1fr",
+                md:
+                  "2fr repeat(3, 1fr)",
+              },
               gap: 1.5,
             }}
           >
             <TextField
               label="Buscar gasto"
               placeholder="Ej. Internet, gasolina..."
-              value={
-                busqueda
-              }
+              value={busqueda}
               onChange={(
                 event
               ) =>
                 setBusqueda(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
             />
@@ -1017,8 +903,7 @@ export default function Gastos() {
                   event
                 ) =>
                   setFiltroTipo(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1053,8 +938,7 @@ export default function Gastos() {
                   event
                 ) =>
                   setFiltroLugar(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1089,8 +973,7 @@ export default function Gastos() {
                   event
                 ) =>
                   setFiltroCategoria(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1103,16 +986,10 @@ export default function Gastos() {
                 </MenuItem>
 
                 {categorias.map(
-                  (
-                    categoria
-                  ) => (
+                  (categoria) => (
                     <MenuItem
-                      key={
-                        categoria
-                      }
-                      value={
-                        categoria
-                      }
+                      key={categoria}
+                      value={categoria}
                     >
                       {categoria}
                     </MenuItem>
@@ -1124,20 +1001,12 @@ export default function Gastos() {
 
           <Box
             sx={{
-              display:
-                "flex",
-
+              display: "flex",
               justifyContent:
                 "space-between",
-
-              alignItems:
-                "center",
-
-              flexWrap:
-                "wrap",
-
+              alignItems: "center",
+              flexWrap: "wrap",
               gap: 1,
-
               mt: 2,
             }}
           >
@@ -1145,7 +1014,9 @@ export default function Gastos() {
               color="text.secondary"
               fontSize={13}
             >
-              {gastosFiltrados.length}{" "}
+              {
+                gastosFiltrados.length
+              }{" "}
               {gastosFiltrados.length ===
               1
                 ? "gasto encontrado"
@@ -1164,20 +1035,14 @@ export default function Gastos() {
         </CardContent>
       </Card>
 
-      {/* DESKTOP */}
-
       <Card
         sx={{
           display: {
             xs: "none",
             md: "block",
           },
-
-          borderRadius:
-            "24px",
-
-          overflow:
-            "hidden",
+          borderRadius: "24px",
+          overflow: "hidden",
         }}
       >
         <TableContainer>
@@ -1222,20 +1087,14 @@ export default function Gastos() {
               {gastosFiltrados.map(
                 (gasto) => (
                   <TableRow
-                    key={
-                      gasto.id
-                    }
+                    key={gasto.id}
                     hover
                   >
                     <TableCell>
                       <Typography
-                        fontWeight={
-                          700
-                        }
+                        fontWeight={700}
                       >
-                        {
-                          gasto.concepto
-                        }
+                        {gasto.concepto}
                       </Typography>
                     </TableCell>
 
@@ -1252,9 +1111,7 @@ export default function Gastos() {
                     <TableCell>
                       <Chip
                         size="small"
-                        label={
-                          gasto.tipo
-                        }
+                        label={gasto.tipo}
                         color={
                           gasto.tipo ===
                           "Fijo"
@@ -1265,9 +1122,7 @@ export default function Gastos() {
                     </TableCell>
 
                     <TableCell>
-                      {
-                        gasto.lugar
-                      }
+                      {gasto.lugar}
                     </TableCell>
 
                     <TableCell>
@@ -1277,16 +1132,12 @@ export default function Gastos() {
                     </TableCell>
 
                     <TableCell>
-                      {
-                        gasto.frecuencia
-                      }
+                      {gasto.frecuencia}
                     </TableCell>
 
                     <TableCell>
                       <Typography
-                        fontWeight={
-                          700
-                        }
+                        fontWeight={700}
                         color="error"
                       >
                         {formatearDinero(
@@ -1334,16 +1185,13 @@ export default function Gastos() {
                   <TableCell
                     colSpan={8}
                     align="center"
-                    sx={{
-                      py: 6,
-                    }}
+                    sx={{ py: 6 }}
                   >
                     <Typography
                       color="text.secondary"
                     >
-                      No encontramos
-                      gastos con esos
-                      filtros.
+                      No encontramos gastos
+                      con esos filtros.
                     </Typography>
                   </TableCell>
                 </TableRow>
@@ -1353,60 +1201,44 @@ export default function Gastos() {
         </TableContainer>
       </Card>
 
-      {/* MOBILE */}
-
       <Box
         sx={{
           display: {
             xs: "grid",
             md: "none",
           },
-
           gap: 1.5,
         }}
       >
         {gastosFiltrados.map(
           (gasto) => (
             <Card
-              key={
-                gasto.id
-              }
+              key={gasto.id}
               sx={{
-                borderRadius:
-                  "20px",
+                borderRadius: "20px",
               }}
             >
               <CardContent>
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
                     gap: 2,
                   }}
                 >
                   <Box>
                     <Typography
-                      fontWeight={
-                        800
-                      }
+                      fontWeight={800}
                     >
-                      {
-                        gasto.concepto
-                      }
+                      {gasto.concepto}
                     </Typography>
 
                     <Typography
                       color="text.secondary"
                       fontSize={13}
                     >
-                      {
-                        gasto.lugar
-                      }{" "}
-                      ·{" "}
+                      {gasto.lugar} ·{" "}
                       {gasto.categoria ||
                         "Sin categoría"}
                     </Typography>
@@ -1414,11 +1246,8 @@ export default function Gastos() {
 
                   <Typography
                     sx={{
-                      fontWeight:
-                        900,
-
-                      color:
-                        "#EF4444",
+                      fontWeight: 900,
+                      color: "#EF4444",
                     }}
                   >
                     {formatearDinero(
@@ -1429,22 +1258,15 @@ export default function Gastos() {
 
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     gap: 1,
-
                     mt: 2,
-
-                    flexWrap:
-                      "wrap",
+                    flexWrap: "wrap",
                   }}
                 >
                   <Chip
                     size="small"
-                    label={
-                      gasto.tipo
-                    }
+                    label={gasto.tipo}
                   />
 
                   <Chip
@@ -1459,19 +1281,12 @@ export default function Gastos() {
                   sx={{
                     mt: 2,
                     pt: 2,
-
                     borderTop:
                       "1px solid #EEEFF3",
-
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
-                    alignItems:
-                      "center",
-
+                    alignItems: "center",
                     gap: 1,
                   }}
                 >
@@ -1480,14 +1295,11 @@ export default function Gastos() {
                       color="text.secondary"
                       fontSize={11}
                     >
-                      Equivalente
-                      semanal
+                      Equivalente semanal
                     </Typography>
 
                     <Typography
-                      fontWeight={
-                        800
-                      }
+                      fontWeight={800}
                     >
                       {formatearDinero(
                         calcularSemanal(
@@ -1532,15 +1344,13 @@ export default function Gastos() {
           0 && (
           <Card
             sx={{
-              borderRadius:
-                "20px",
+              borderRadius: "20px",
             }}
           >
             <CardContent
               sx={{
                 py: 5,
-                textAlign:
-                  "center",
+                textAlign: "center",
               }}
             >
               <Typography
@@ -1554,14 +1364,6 @@ export default function Gastos() {
                 sx={{ mt: 1 }}
               >
                 Sin resultados
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                fontSize={13}
-              >
-                Prueba modificando
-                los filtros.
               </Typography>
             </CardContent>
           </Card>
@@ -1580,21 +1382,16 @@ function MiniResumen({
   return (
     <Card
       sx={{
-        borderRadius:
-          "20px",
+        borderRadius: "20px",
       }}
     >
       <CardContent>
         <Box
           sx={{
-            display:
-              "flex",
-
+            display: "flex",
             justifyContent:
               "space-between",
-
-            alignItems:
-              "center",
+            alignItems: "center",
           }}
         >
           <Box>
@@ -1608,13 +1405,8 @@ function MiniResumen({
             <Typography
               sx={{
                 mt: 0.5,
-
-                fontSize:
-                  22,
-
-                fontWeight:
-                  900,
-
+                fontSize: 22,
+                fontWeight: 900,
                 color:
                   color ||
                   "text.primary",

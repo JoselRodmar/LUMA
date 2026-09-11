@@ -21,7 +21,6 @@ import Movimientos from "./pages/Movimientos";
 import PlaneadoReal from "./pages/PlaneadoReal";
 import Apartados from "./pages/Apartados";
 import Calendario from "./pages/Calendario";
-import Migracion from "./pages/Migracion";
 
 function AppPrivada() {
   return (
@@ -76,13 +75,6 @@ function AppPrivada() {
               <Calendario />
             }
           />
-
-          <Route
-  path="/migracion"
-  element={
-    <Migracion />
-  }
-/>
         </Routes>
       </Layout>
     </ProtectedRoute>

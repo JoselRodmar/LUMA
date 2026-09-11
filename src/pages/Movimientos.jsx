@@ -7,9 +7,7 @@ import {
 
 import {
   addDoc,
-  collection,
   deleteDoc,
-  doc,
   getDocs,
   serverTimestamp,
   updateDoc,
@@ -38,18 +36,17 @@ import {
 } from "@mui/material";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+  userDoc,
+} from "../services/userData";
 
 import {
   formatearDinero,
 } from "../utils/frecuencia";
-
-/*
-========================================
-CONFIGURACIÓN
-========================================
-*/
 
 const lugares = [
   "Casa",
@@ -86,12 +83,6 @@ const categoriasEgreso = [
   "Deudas",
   "Otros gastos",
 ];
-
-/*
-========================================
-FECHA LOCAL
-========================================
-*/
 
 const obtenerHoy = () => {
   const fecha = new Date();
@@ -137,26 +128,18 @@ const formatearFecha = (
 const crearFormularioInicial =
   () => ({
     tipo: "Egreso",
-
-    fecha:
-      obtenerHoy(),
-
+    fecha: obtenerHoy(),
     lugar: "Casa",
-
     categoria:
       "Alimentación",
-
     concepto: "",
-
     monto: "",
   });
 
 export default function Movimientos() {
-  /*
-  ========================================
-  ESTADO PRINCIPAL
-  ========================================
-  */
+  const {
+    user,
+  } = useAuth();
 
   const [
     movimientos,
@@ -190,12 +173,6 @@ export default function Movimientos() {
     setError,
   ] = useState("");
 
-  /*
-  ========================================
-  FILTROS
-  ========================================
-  */
-
   const [
     busqueda,
     setBusqueda,
@@ -226,12 +203,6 @@ export default function Movimientos() {
     setFechaHasta,
   ] = useState("");
 
-  /*
-  ========================================
-  CARGAR MOVIMIENTOS
-  ========================================
-  */
-
   const cargarMovimientos =
     useCallback(async () => {
       try {
@@ -239,8 +210,8 @@ export default function Movimientos() {
 
         const snapshot =
           await getDocs(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "movimientos"
             )
           );
@@ -248,36 +219,21 @@ export default function Movimientos() {
         const lista =
           snapshot.docs.map(
             (documento) => ({
-              id:
-                documento.id,
-
+              id: documento.id,
               ...documento.data(),
             })
           );
 
-        /*
-        Ordenamos por fecha,
-        más reciente primero.
-        */
-
         lista.sort(
-          (a, b) => {
-            const fechaA =
-              a.fecha || "";
-
-            const fechaB =
-              b.fecha || "";
-
-            return fechaB.localeCompare(
-              fechaA
-            );
-          }
+          (a, b) =>
+            (
+              b.fecha || ""
+            ).localeCompare(
+              a.fecha || ""
+            )
         );
 
-        setMovimientos(
-          lista
-        );
-
+        setMovimientos(lista);
         setError("");
       } catch (err) {
         console.error(err);
@@ -288,17 +244,11 @@ export default function Movimientos() {
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [user.uid]);
 
   useEffect(() => {
     cargarMovimientos();
   }, [cargarMovimientos]);
-
-  /*
-  ========================================
-  CATEGORÍAS DEL FORMULARIO
-  ========================================
-  */
 
   const categoriasFormulario =
     formulario.tipo ===
@@ -306,19 +256,12 @@ export default function Movimientos() {
       ? categoriasIngreso
       : categoriasEgreso;
 
-  /*
-  ========================================
-  MANEJO DEL FORMULARIO
-  ========================================
-  */
-
   const manejarCambio = (
     campo,
     valor
   ) => {
     if (
-      campo ===
-      "tipo"
+      campo === "tipo"
     ) {
       const nuevasCategorias =
         valor === "Ingreso"
@@ -328,9 +271,7 @@ export default function Movimientos() {
       setFormulario(
         (anterior) => ({
           ...anterior,
-
           tipo: valor,
-
           categoria:
             nuevasCategorias[0],
         })
@@ -355,12 +296,6 @@ export default function Movimientos() {
 
       setEditandoId(null);
     };
-
-  /*
-  ========================================
-  GUARDAR
-  ========================================
-  */
 
   const guardarMovimiento =
     async (event) => {
@@ -430,8 +365,8 @@ export default function Movimientos() {
 
         if (editandoId) {
           await updateDoc(
-            doc(
-              db,
+            userDoc(
+              user.uid,
               "movimientos",
               editandoId
             ),
@@ -439,8 +374,8 @@ export default function Movimientos() {
           );
         } else {
           await addDoc(
-            collection(
-              db,
+            userCollection(
+              user.uid,
               "movimientos"
             ),
             {
@@ -465,12 +400,6 @@ export default function Movimientos() {
         setGuardando(false);
       }
     };
-
-  /*
-  ========================================
-  EDITAR
-  ========================================
-  */
 
   const editarMovimiento =
     (movimiento) => {
@@ -516,16 +445,8 @@ export default function Movimientos() {
       });
     };
 
-  /*
-  ========================================
-  ELIMINAR
-  ========================================
-  */
-
   const eliminarMovimiento =
-    async (
-      movimiento
-    ) => {
+    async (movimiento) => {
       const confirmar =
         window.confirm(
           `¿Eliminar "${movimiento.concepto}"?`
@@ -537,8 +458,8 @@ export default function Movimientos() {
 
       try {
         await deleteDoc(
-          doc(
-            db,
+          userDoc(
+            user.uid,
             "movimientos",
             movimiento.id
           )
@@ -554,12 +475,6 @@ export default function Movimientos() {
       }
     };
 
-  /*
-  ========================================
-  TODAS LAS CATEGORÍAS PARA FILTROS
-  ========================================
-  */
-
   const todasCategorias =
     useMemo(() => {
       return [
@@ -569,12 +484,6 @@ export default function Movimientos() {
         ]),
       ];
     }, []);
-
-  /*
-  ========================================
-  FILTRADO
-  ========================================
-  */
 
   const movimientosFiltrados =
     useMemo(() => {
@@ -647,12 +556,6 @@ export default function Movimientos() {
       fechaHasta,
     ]);
 
-  /*
-  ========================================
-  RESUMEN REAL
-  ========================================
-  */
-
   const resumen =
     useMemo(() => {
       let ingresos = 0;
@@ -670,11 +573,9 @@ export default function Movimientos() {
             movimiento.tipo ===
             "Ingreso"
           ) {
-            ingresos +=
-              monto;
+            ingresos += monto;
           } else {
-            egresos +=
-              monto;
+            egresos += monto;
           }
         }
       );
@@ -682,23 +583,14 @@ export default function Movimientos() {
       return {
         ingresos,
         egresos,
-
         balance:
-          ingresos -
-          egresos,
-
+          ingresos - egresos,
         cantidad:
           movimientosFiltrados.length,
       };
     }, [
       movimientosFiltrados,
     ]);
-
-  /*
-  ========================================
-  LIMPIAR FILTROS
-  ========================================
-  */
 
   const limpiarFiltros =
     () => {
@@ -710,27 +602,14 @@ export default function Movimientos() {
       setFechaHasta("");
     };
 
-  /*
-  ========================================
-  LOADING
-  ========================================
-  */
-
   if (loading) {
     return (
       <Box
         sx={{
-          minHeight:
-            "70vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
+          minHeight: "70vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <CircularProgress />
@@ -746,27 +625,17 @@ export default function Movimientos() {
           sm: 3,
           lg: 4,
         },
-
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      {/* ===================================
-          ENCABEZADO
-      =================================== */}
-
-      <Box
-        sx={{
-          mb: 3,
-        }}
-      >
+      <Box sx={{ mb: 3 }}>
         <Typography
           sx={{
             fontSize: {
               xs: 29,
               md: 34,
             },
-
             fontWeight: 800,
           }}
         >
@@ -775,79 +644,56 @@ export default function Movimientos() {
 
         <Typography
           color="text.secondary"
-          sx={{
-            mt: 0.5,
-          }}
+          sx={{ mt: 0.5 }}
         >
           Registra el dinero que
           realmente entró y salió.
         </Typography>
       </Box>
 
-      {/* ===================================
-          ERROR
-      =================================== */}
-
       {error && (
         <Alert
           severity="error"
           sx={{
             mb: 3,
-            borderRadius:
-              "16px",
+            borderRadius: "16px",
           }}
         >
           {error}
         </Alert>
       )}
 
-      {/* ===================================
-          RESUMEN
-      =================================== */}
-
       <Box
         sx={{
           display: "grid",
-
-          gridTemplateColumns:
-            {
-              xs: "1fr",
-
-              sm:
-                "repeat(2, 1fr)",
-
-              lg:
-                "repeat(4, 1fr)",
-            },
-
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
           gap: 2,
-
           mb: 3,
         }}
       >
         <ResumenCard
           titulo="Ingresos reales"
-          valor={
-            resumen.ingresos
-          }
+          valor={resumen.ingresos}
           icono="💰"
           color="#10B981"
         />
 
         <ResumenCard
           titulo="Egresos reales"
-          valor={
-            resumen.egresos
-          }
+          valor={resumen.egresos}
           icono="🧾"
           color="#EF4444"
         />
 
         <ResumenCard
           titulo="Balance"
-          valor={
-            resumen.balance
-          }
+          valor={resumen.balance}
           icono="⚖️"
           color={
             resumen.balance >=
@@ -859,15 +705,12 @@ export default function Movimientos() {
 
         <Card
           sx={{
-            borderRadius:
-              "20px",
+            borderRadius: "20px",
           }}
         >
           <CardContent>
             <Typography
-              sx={{
-                fontSize: 24,
-              }}
+              sx={{ fontSize: 24 }}
             >
               🔄
             </Typography>
@@ -875,9 +718,7 @@ export default function Movimientos() {
             <Typography
               color="text.secondary"
               fontSize={13}
-              sx={{
-                mt: 1,
-              }}
+              sx={{ mt: 1 }}
             >
               Movimientos
             </Typography>
@@ -885,44 +726,20 @@ export default function Movimientos() {
             <Typography
               sx={{
                 mt: 0.5,
-
                 fontSize: 22,
-
-                fontWeight:
-                  900,
+                fontWeight: 900,
               }}
             >
-              {
-                resumen.cantidad
-              }
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={11}
-            >
-              según los filtros
-              actuales
+              {resumen.cantidad}
             </Typography>
           </CardContent>
         </Card>
       </Box>
 
-      {/* ===================================
-          FORMULARIO
-      =================================== */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
-
-          border:
-            editandoId
-              ? "1px solid #DCD5FF"
-              : "1px solid rgba(0,0,0,.03)",
         }}
       >
         <CardContent
@@ -933,53 +750,15 @@ export default function Movimientos() {
             },
           }}
         >
-          <Box
-            sx={{
-              display:
-                "flex",
-
-              justifyContent:
-                "space-between",
-
-              alignItems:
-                "center",
-
-              gap: 2,
-
-              flexWrap:
-                "wrap",
-
-              mb: 2.5,
-            }}
+          <Typography
+            fontWeight={800}
+            fontSize={19}
+            sx={{ mb: 2.5 }}
           >
-            <Box>
-              <Typography
-                fontWeight={800}
-                fontSize={19}
-              >
-                {editandoId
-                  ? "Editar movimiento"
-                  : "Nuevo movimiento"}
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                fontSize={13}
-              >
-                Registra una entrada
-                o salida real de
-                dinero.
-              </Typography>
-            </Box>
-
-            {editandoId && (
-              <Chip
-                label="Modo edición"
-                color="primary"
-                size="small"
-              />
-            )}
-          </Box>
+            {editandoId
+              ? "Editar movimiento"
+              : "Nuevo movimiento"}
+          </Typography>
 
           <Box
             component="form"
@@ -989,26 +768,17 @@ export default function Movimientos() {
           >
             <Box
               sx={{
-                display:
-                  "grid",
-
-                gridTemplateColumns:
-                  {
-                    xs:
-                      "1fr",
-
-                    sm:
-                      "repeat(2, 1fr)",
-
-                    lg:
-                      "repeat(3, 1fr)",
-                  },
-
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm:
+                    "repeat(2, 1fr)",
+                  lg:
+                    "repeat(3, 1fr)",
+                },
                 gap: 2,
               }}
             >
-              {/* TIPO */}
-
               <FormControl fullWidth>
                 <InputLabel>
                   Tipo
@@ -1024,8 +794,7 @@ export default function Movimientos() {
                   ) =>
                     manejarCambio(
                       "tipo",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -1039,8 +808,6 @@ export default function Movimientos() {
                 </Select>
               </FormControl>
 
-              {/* FECHA */}
-
               <TextField
                 label="Fecha"
                 type="date"
@@ -1052,17 +819,13 @@ export default function Movimientos() {
                 ) =>
                   manejarCambio(
                     "fecha",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 InputLabelProps={{
                   shrink: true,
                 }}
-                fullWidth
               />
-
-              {/* LUGAR */}
 
               <FormControl fullWidth>
                 <InputLabel>
@@ -1079,8 +842,7 @@ export default function Movimientos() {
                   ) =>
                     manejarCambio(
                       "lugar",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
@@ -1097,8 +859,6 @@ export default function Movimientos() {
                 </Select>
               </FormControl>
 
-              {/* CATEGORÍA */}
-
               <FormControl fullWidth>
                 <InputLabel>
                   Categoría
@@ -1114,33 +874,22 @@ export default function Movimientos() {
                   ) =>
                     manejarCambio(
                       "categoria",
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                 >
                   {categoriasFormulario.map(
-                    (
-                      categoria
-                    ) => (
+                    (categoria) => (
                       <MenuItem
-                        key={
-                          categoria
-                        }
-                        value={
-                          categoria
-                        }
+                        key={categoria}
+                        value={categoria}
                       >
-                        {
-                          categoria
-                        }
+                        {categoria}
                       </MenuItem>
                     )
                   )}
                 </Select>
               </FormControl>
-
-              {/* CONCEPTO */}
 
               <TextField
                 label="Concepto"
@@ -1152,20 +901,11 @@ export default function Movimientos() {
                 ) =>
                   manejarCambio(
                     "concepto",
-                    event.target
-                      .value
+                    event.target.value
                   )
-                }
-                placeholder={
-                  formulario.tipo ===
-                  "Ingreso"
-                    ? "Ej. Cobro de consulta"
-                    : "Ej. Gasolina"
                 }
                 fullWidth
               />
-
-              {/* MONTO */}
 
               <TextField
                 label="Monto"
@@ -1178,8 +918,7 @@ export default function Movimientos() {
                 ) =>
                   manejarCambio(
                     "monto",
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 inputProps={{
@@ -1192,32 +931,22 @@ export default function Movimientos() {
 
             <Box
               sx={{
-                display:
-                  "flex",
-
+                display: "flex",
                 gap: 1.5,
-
                 mt: 2.5,
-
-                flexWrap:
-                  "wrap",
+                flexWrap: "wrap",
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
-                disabled={
-                  guardando
-                }
+                disabled={guardando}
               >
                 {guardando
                   ? "Guardando..."
                   : editandoId
                     ? "Guardar cambios"
-                    : formulario.tipo ===
-                        "Ingreso"
-                      ? "Registrar ingreso"
-                      : "Registrar egreso"}
+                    : "Registrar movimiento"}
               </Button>
 
               {editandoId && (
@@ -1235,64 +964,41 @@ export default function Movimientos() {
         </CardContent>
       </Card>
 
-      {/* ===================================
-          FILTROS
-      =================================== */}
-
       <Card
         sx={{
-          borderRadius:
-            "24px",
-
+          borderRadius: "24px",
           mb: 3,
         }}
       >
-        <CardContent
-          sx={{
-            p: 2.5,
-          }}
-        >
+        <CardContent sx={{ p: 2.5 }}>
           <Typography
             fontWeight={800}
-            sx={{
-              mb: 2,
-            }}
+            sx={{ mb: 2 }}
           >
             Buscar y filtrar
           </Typography>
 
           <Box
             sx={{
-              display:
-                "grid",
-
-              gridTemplateColumns:
-                {
-                  xs:
-                    "1fr",
-
-                  sm:
-                    "repeat(2, 1fr)",
-
-                  lg:
-                    "2fr repeat(5, 1fr)",
-                },
-
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm:
+                  "repeat(2, 1fr)",
+                lg:
+                  "2fr repeat(5, 1fr)",
+              },
               gap: 1.5,
             }}
           >
             <TextField
               label="Buscar movimiento"
-              placeholder="Ej. gasolina, consulta..."
-              value={
-                busqueda
-              }
+              value={busqueda}
               onChange={(
                 event
               ) =>
                 setBusqueda(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
             />
@@ -1311,8 +1017,7 @@ export default function Movimientos() {
                   event
                 ) =>
                   setFiltroTipo(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1344,8 +1049,7 @@ export default function Movimientos() {
                   event
                 ) =>
                   setFiltroLugar(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1380,8 +1084,7 @@ export default function Movimientos() {
                   event
                 ) =>
                   setFiltroCategoria(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
               >
@@ -1390,20 +1093,12 @@ export default function Movimientos() {
                 </MenuItem>
 
                 {todasCategorias.map(
-                  (
-                    categoria
-                  ) => (
+                  (categoria) => (
                     <MenuItem
-                      key={
-                        categoria
-                      }
-                      value={
-                        categoria
-                      }
+                      key={categoria}
+                      value={categoria}
                     >
-                      {
-                        categoria
-                      }
+                      {categoria}
                     </MenuItem>
                   )
                 )}
@@ -1413,15 +1108,12 @@ export default function Movimientos() {
             <TextField
               label="Desde"
               type="date"
-              value={
-                fechaDesde
-              }
+              value={fechaDesde}
               onChange={(
                 event
               ) =>
                 setFechaDesde(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
               InputLabelProps={{
@@ -1432,15 +1124,12 @@ export default function Movimientos() {
             <TextField
               label="Hasta"
               type="date"
-              value={
-                fechaHasta
-              }
+              value={fechaHasta}
               onChange={(
                 event
               ) =>
                 setFechaHasta(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
               InputLabelProps={{
@@ -1449,53 +1138,17 @@ export default function Movimientos() {
             />
           </Box>
 
-          <Box
-            sx={{
-              display:
-                "flex",
-
-              justifyContent:
-                "space-between",
-
-              alignItems:
-                "center",
-
-              gap: 1,
-
-              flexWrap:
-                "wrap",
-
-              mt: 2,
-            }}
+          <Button
+            size="small"
+            onClick={
+              limpiarFiltros
+            }
+            sx={{ mt: 2 }}
           >
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              {
-                movimientosFiltrados.length
-              }{" "}
-              {movimientosFiltrados.length ===
-              1
-                ? "movimiento encontrado"
-                : "movimientos encontrados"}
-            </Typography>
-
-            <Button
-              size="small"
-              onClick={
-                limpiarFiltros
-              }
-            >
-              Limpiar filtros
-            </Button>
-          </Box>
+            Limpiar filtros
+          </Button>
         </CardContent>
       </Card>
-
-      {/* ===================================
-          TABLA DESKTOP
-      =================================== */}
 
       <Card
         sx={{
@@ -1503,12 +1156,8 @@ export default function Movimientos() {
             xs: "none",
             md: "block",
           },
-
-          borderRadius:
-            "24px",
-
-          overflow:
-            "hidden",
+          borderRadius: "24px",
+          overflow: "hidden",
         }}
       >
         <TableContainer>
@@ -1518,27 +1167,21 @@ export default function Movimientos() {
                 <TableCell>
                   Fecha
                 </TableCell>
-
                 <TableCell>
                   Concepto
                 </TableCell>
-
                 <TableCell>
                   Tipo
                 </TableCell>
-
                 <TableCell>
                   Categoría
                 </TableCell>
-
                 <TableCell>
                   Espacio
                 </TableCell>
-
                 <TableCell>
                   Monto
                 </TableCell>
-
                 <TableCell align="right">
                   Acciones
                 </TableCell>
@@ -1547,9 +1190,7 @@ export default function Movimientos() {
 
             <TableBody>
               {movimientosFiltrados.map(
-                (
-                  movimiento
-                ) => (
+                (movimiento) => (
                   <TableRow
                     key={
                       movimiento.id
@@ -1564,9 +1205,7 @@ export default function Movimientos() {
 
                     <TableCell>
                       <Typography
-                        fontWeight={
-                          700
-                        }
+                        fontWeight={700}
                       >
                         {
                           movimiento.concepto
@@ -1591,27 +1230,19 @@ export default function Movimientos() {
                     </TableCell>
 
                     <TableCell>
-                      <Chip
-                        size="small"
-                        label={
-                          movimiento.categoria ||
-                          "Sin categoría"
-                        }
-                      />
+                      {
+                        movimiento.categoria
+                      }
                     </TableCell>
 
                     <TableCell>
-                      {
-                        movimiento.lugar
-                      }
+                      {movimiento.lugar}
                     </TableCell>
 
                     <TableCell>
                       <Typography
                         sx={{
-                          fontWeight:
-                            800,
-
+                          fontWeight: 800,
                           color:
                             movimiento.tipo ===
                             "Ingreso"
@@ -1658,51 +1289,10 @@ export default function Movimientos() {
                   </TableRow>
                 )
               )}
-
-              {movimientosFiltrados.length ===
-                0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    align="center"
-                    sx={{
-                      py: 7,
-                    }}
-                  >
-                    <Typography
-                      fontSize={30}
-                    >
-                      🔄
-                    </Typography>
-
-                    <Typography
-                      fontWeight={800}
-                      sx={{
-                        mt: 1,
-                      }}
-                    >
-                      No hay movimientos
-                    </Typography>
-
-                    <Typography
-                      color="text.secondary"
-                      fontSize={13}
-                    >
-                      Registra tu primera
-                      entrada o salida de
-                      dinero.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </TableContainer>
       </Card>
-
-      {/* ===================================
-          MOBILE
-      =================================== */}
 
       <Box
         sx={{
@@ -1710,43 +1300,29 @@ export default function Movimientos() {
             xs: "grid",
             md: "none",
           },
-
           gap: 1.5,
         }}
       >
         {movimientosFiltrados.map(
-          (
-            movimiento
-          ) => (
+          (movimiento) => (
             <Card
-              key={
-                movimiento.id
-              }
+              key={movimiento.id}
               sx={{
-                borderRadius:
-                  "20px",
+                borderRadius: "20px",
               }}
             >
               <CardContent>
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "space-between",
-
-                    alignItems:
-                      "flex-start",
-
                     gap: 2,
                   }}
                 >
                   <Box>
                     <Typography
-                      fontWeight={
-                        800
-                      }
+                      fontWeight={800}
                     >
                       {
                         movimiento.concepto
@@ -1756,9 +1332,6 @@ export default function Movimientos() {
                     <Typography
                       color="text.secondary"
                       fontSize={13}
-                      sx={{
-                        mt: 0.3,
-                      }}
                     >
                       {formatearFecha(
                         movimiento.fecha
@@ -1768,11 +1341,7 @@ export default function Movimientos() {
 
                   <Typography
                     sx={{
-                      fontWeight:
-                        900,
-
-                      fontSize: 17,
-
+                      fontWeight: 900,
                       color:
                         movimiento.tipo ===
                         "Ingreso"
@@ -1792,15 +1361,10 @@ export default function Movimientos() {
 
                 <Box
                   sx={{
-                    display:
-                      "flex",
-
+                    display: "flex",
                     gap: 1,
-
                     mt: 2,
-
-                    flexWrap:
-                      "wrap",
+                    flexWrap: "wrap",
                   }}
                 >
                   <Chip
@@ -1808,13 +1372,6 @@ export default function Movimientos() {
                     label={
                       movimiento.tipo
                     }
-                    color={
-                      movimiento.tipo ===
-                      "Ingreso"
-                        ? "success"
-                        : "error"
-                    }
-                    variant="outlined"
                   />
 
                   <Chip
@@ -1827,8 +1384,7 @@ export default function Movimientos() {
                   <Chip
                     size="small"
                     label={
-                      movimiento.categoria ||
-                      "Sin categoría"
+                      movimiento.categoria
                     }
                   />
                 </Box>
@@ -1836,19 +1392,9 @@ export default function Movimientos() {
                 <Box
                   sx={{
                     mt: 2,
-
-                    pt: 2,
-
-                    borderTop:
-                      "1px solid #EEEFF3",
-
-                    display:
-                      "flex",
-
+                    display: "flex",
                     justifyContent:
                       "flex-end",
-
-                    gap: 1,
                   }}
                 >
                   <Button
@@ -1878,57 +1424,10 @@ export default function Movimientos() {
             </Card>
           )
         )}
-
-        {movimientosFiltrados.length ===
-          0 && (
-          <Card
-            sx={{
-              borderRadius:
-                "20px",
-            }}
-          >
-            <CardContent
-              sx={{
-                py: 6,
-                textAlign:
-                  "center",
-              }}
-            >
-              <Typography
-                fontSize={30}
-              >
-                🔄
-              </Typography>
-
-              <Typography
-                fontWeight={800}
-                sx={{
-                  mt: 1,
-                }}
-              >
-                Sin movimientos
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                fontSize={13}
-              >
-                Registra una entrada
-                o salida de dinero.
-              </Typography>
-            </CardContent>
-          </Card>
-        )}
       </Box>
     </Box>
   );
 }
-
-/*
-========================================
-TARJETA DE RESUMEN
-========================================
-*/
 
 function ResumenCard({
   titulo,
@@ -1939,15 +1438,12 @@ function ResumenCard({
   return (
     <Card
       sx={{
-        borderRadius:
-          "20px",
+        borderRadius: "20px",
       }}
     >
       <CardContent>
         <Typography
-          sx={{
-            fontSize: 24,
-          }}
+          sx={{ fontSize: 24 }}
         >
           {icono}
         </Typography>
@@ -1955,9 +1451,7 @@ function ResumenCard({
         <Typography
           color="text.secondary"
           fontSize={13}
-          sx={{
-            mt: 1,
-          }}
+          sx={{ mt: 1 }}
         >
           {titulo}
         </Typography>
@@ -1965,12 +1459,8 @@ function ResumenCard({
         <Typography
           sx={{
             mt: 0.5,
-
             fontSize: 22,
-
-            fontWeight:
-              900,
-
+            fontWeight: 900,
             color:
               color ||
               "text.primary",

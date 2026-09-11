@@ -1,11 +1,11 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
 
 import {
-  collection,
   getDocs,
 } from "firebase/firestore";
 
@@ -19,8 +19,12 @@ import {
 } from "@mui/material";
 
 import {
-  db,
-} from "../services/firebase";
+  useAuth,
+} from "../context/AuthContext";
+
+import {
+  userCollection,
+} from "../services/userData";
 
 import {
   formatearDinero,
@@ -37,22 +41,10 @@ import {
 const obtenerEstado = (
   apartado
 ) => {
-  const objetivo =
-    Number(
-      apartado.montoObjetivo ||
-        0
-    );
-
-  const ahorrado =
-    Number(
-      apartado.ahorrado ||
-        0
-    );
-
   const pendiente =
     calcularPendienteApartado(
-      objetivo,
-      ahorrado
+      apartado.montoObjetivo,
+      apartado.ahorrado
     );
 
   const dias =
@@ -115,6 +107,10 @@ const formatearFecha = (
 };
 
 export default function Calendario() {
+  const {
+    user,
+  } = useAuth();
+
   const [
     apartados,
     setApartados,
@@ -130,46 +126,43 @@ export default function Calendario() {
     setError,
   ] = useState("");
 
-  useEffect(() => {
-    const cargarApartados =
-      async () => {
-        try {
-          setLoading(true);
+  const cargarApartados =
+    useCallback(async () => {
+      try {
+        setLoading(true);
 
-          const snapshot =
-            await getDocs(
-              collection(
-                db,
-                "apartados"
-              )
-            );
-
-          const lista =
-            snapshot.docs.map(
-              (documento) => ({
-                id:
-                  documento.id,
-
-                ...documento.data(),
-              })
-            );
-
-          setApartados(lista);
-
-          setError("");
-        } catch (err) {
-          console.error(err);
-
-          setError(
-            "No fue posible cargar el calendario financiero."
+        const snapshot =
+          await getDocs(
+            userCollection(
+              user.uid,
+              "apartados"
+            )
           );
-        } finally {
-          setLoading(false);
-        }
-      };
 
+        const lista =
+          snapshot.docs.map(
+            (documento) => ({
+              id: documento.id,
+              ...documento.data(),
+            })
+          );
+
+        setApartados(lista);
+        setError("");
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible cargar el calendario financiero."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }, [user.uid]);
+
+  useEffect(() => {
     cargarApartados();
-  }, []);
+  }, [cargarApartados]);
 
   const apartadosOrdenados =
     useMemo(() => {
@@ -211,11 +204,8 @@ export default function Calendario() {
   const resumen =
     useMemo(() => {
       let totalObjetivo = 0;
-
       let totalReservado = 0;
-
       let totalPendiente = 0;
-
       let reservaSemanal = 0;
 
       apartados.forEach(
@@ -294,17 +284,10 @@ export default function Calendario() {
     return (
       <Box
         sx={{
-          minHeight:
-            "70vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
+          minHeight: "70vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <CircularProgress />
@@ -320,9 +303,7 @@ export default function Calendario() {
           sm: 3,
           lg: 4,
         },
-
         maxWidth: 1400,
-
         mx: "auto",
       }}
     >
@@ -332,9 +313,7 @@ export default function Calendario() {
             xs: 29,
             md: 34,
           },
-
-          fontWeight:
-            800,
+          fontWeight: 800,
         }}
       >
         Calendario financiero
@@ -356,9 +335,7 @@ export default function Calendario() {
         <Card
           sx={{
             mb: 3,
-
-            borderRadius:
-              "20px",
+            borderRadius: "20px",
           }}
         >
           <CardContent>
@@ -374,21 +351,14 @@ export default function Calendario() {
 
       <Box
         sx={{
-          display:
-            "grid",
-
-          gridTemplateColumns:
-            {
-              xs:
-                "1fr",
-
-              sm:
-                "repeat(2, 1fr)",
-
-              lg:
-                "repeat(4, 1fr)",
-            },
-
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
           gap: 2,
         }}
       >
@@ -428,21 +398,10 @@ export default function Calendario() {
       <Card
         sx={{
           mt: 3,
-
-          borderRadius:
-            "24px",
-
-          background:
-            proximos30Dias > 0
-              ? "linear-gradient(135deg, #FFFFFF 0%, #FFF8E8 100%)"
-              : "linear-gradient(135deg, #FFFFFF 0%, #ECFDF5 100%)",
+          borderRadius: "24px",
         }}
       >
-        <CardContent
-          sx={{
-            p: 3,
-          }}
-        >
+        <CardContent sx={{ p: 3 }}>
           <Typography
             color="text.secondary"
             fontSize={12}
@@ -453,25 +412,12 @@ export default function Calendario() {
 
           <Typography
             sx={{
-              fontSize:
-                30,
-
-              fontWeight:
-                900,
-
+              fontSize: 30,
+              fontWeight: 900,
               mt: 0.5,
             }}
           >
             {proximos30Dias}
-          </Typography>
-
-          <Typography
-            color="text.secondary"
-          >
-            {proximos30Dias ===
-            1
-              ? "Tienes 1 compromiso pendiente dentro de los próximos 30 días."
-              : `Tienes ${proximos30Dias} compromisos pendientes dentro de los próximos 30 días.`}
           </Typography>
         </CardContent>
       </Card>
@@ -479,14 +425,9 @@ export default function Calendario() {
       <Typography
         sx={{
           mt: 4,
-
           mb: 2,
-
-          fontSize:
-            22,
-
-          fontWeight:
-            800,
+          fontSize: 22,
+          fontWeight: 800,
         }}
       >
         Próximos compromisos
@@ -494,9 +435,7 @@ export default function Calendario() {
 
       <Box
         sx={{
-          display:
-            "grid",
-
+          display: "grid",
           gap: 2,
         }}
       >
@@ -545,62 +484,39 @@ export default function Calendario() {
 
             return (
               <Card
-                key={
-                  apartado.id
-                }
+                key={apartado.id}
                 sx={{
-                  borderRadius:
-                    "24px",
+                  borderRadius: "24px",
                 }}
               >
                 <CardContent
-                  sx={{
-                    p: {
-                      xs: 2.5,
-                      md: 3,
-                    },
-                  }}
+                  sx={{ p: 3 }}
                 >
                   <Box
                     sx={{
-                      display:
-                        "flex",
-
-                      flexDirection:
-                        {
-                          xs:
-                            "column",
-
-                          md:
-                            "row",
-                        },
-
+                      display: "flex",
+                      flexDirection: {
+                        xs: "column",
+                        md: "row",
+                      },
                       justifyContent:
                         "space-between",
-
                       gap: 2,
                     }}
                   >
                     <Box>
                       <Box
                         sx={{
-                          display:
-                            "flex",
-
+                          display: "flex",
                           alignItems:
                             "center",
-
                           gap: 1,
-
-                          flexWrap:
-                            "wrap",
+                          flexWrap: "wrap",
                         }}
                       >
                         <Typography
                           sx={{
-                            fontSize:
-                              21,
-
+                            fontSize: 21,
                             fontWeight:
                               800,
                           }}
@@ -623,34 +539,16 @@ export default function Calendario() {
 
                       <Typography
                         color="text.secondary"
-                        sx={{
-                          mt: 0.5,
-                          fontSize:
-                            13,
-                        }}
+                        fontSize={13}
                       >
-                        {
-                          apartado.lugar
-                        }{" "}
-                        ·{" "}
+                        {apartado.lugar} ·{" "}
                         {formatearFecha(
                           apartado.fechaVencimiento
                         )}
                       </Typography>
                     </Box>
 
-                    <Box
-                      sx={{
-                        textAlign:
-                          {
-                            xs:
-                              "left",
-
-                            md:
-                              "right",
-                          },
-                      }}
-                    >
+                    <Box>
                       <Typography
                         color="text.secondary"
                         fontSize={12}
@@ -660,21 +558,15 @@ export default function Calendario() {
 
                       <Typography
                         sx={{
-                          fontWeight:
-                            900,
-
-                          fontSize:
-                            24,
-
+                          fontWeight: 900,
+                          fontSize: 24,
                           color:
-                            pendiente >
-                            0
+                            pendiente > 0
                               ? "#6D5DFB"
                               : "#10B981",
                         }}
                       >
-                        {pendiente >
-                        0
+                        {pendiente > 0
                           ? formatearDinero(
                               semanal
                             )
@@ -686,16 +578,9 @@ export default function Calendario() {
                   <Box
                     sx={{
                       mt: 3,
-
-                      height:
-                        10,
-
-                      borderRadius:
-                        10,
-
-                      overflow:
-                        "hidden",
-
+                      height: 10,
+                      borderRadius: 10,
+                      overflow: "hidden",
                       backgroundColor:
                         "#ECEEF3",
                     }}
@@ -704,16 +589,9 @@ export default function Calendario() {
                       sx={{
                         width:
                           `${porcentaje}%`,
-
-                        height:
-                          "100%",
-
-                        borderRadius:
-                          10,
-
+                        height: "100%",
                         backgroundColor:
-                          pendiente <=
-                          0
+                          pendiente <= 0
                             ? "#10B981"
                             : "#6D5DFB",
                       }}
@@ -722,48 +600,36 @@ export default function Calendario() {
 
                   <Box
                     sx={{
-                      display:
-                        "grid",
-
-                      gridTemplateColumns:
-                        {
-                          xs:
-                            "repeat(2, 1fr)",
-
-                          md:
-                            "repeat(5, 1fr)",
-                        },
-
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs:
+                          "repeat(2, 1fr)",
+                        md:
+                          "repeat(5, 1fr)",
+                      },
                       gap: 2,
-
                       mt: 2.5,
                     }}
                   >
                     <Dato
                       titulo="Objetivo"
-                      valor={
-                        formatearDinero(
-                          objetivo
-                        )
-                      }
+                      valor={formatearDinero(
+                        objetivo
+                      )}
                     />
 
                     <Dato
                       titulo="Reservado"
-                      valor={
-                        formatearDinero(
-                          reservado
-                        )
-                      }
+                      valor={formatearDinero(
+                        reservado
+                      )}
                     />
 
                     <Dato
                       titulo="Pendiente"
-                      valor={
-                        formatearDinero(
-                          pendiente
-                        )
-                      }
+                      valor={formatearDinero(
+                        pendiente
+                      )}
                     />
 
                     <Dato
@@ -776,8 +642,7 @@ export default function Calendario() {
                     <Dato
                       titulo="Tiempo"
                       valor={
-                        pendiente <=
-                        0
+                        pendiente <= 0
                           ? "Listo"
                           : dias < 0
                             ? `${Math.abs(
@@ -787,11 +652,6 @@ export default function Calendario() {
                                 0
                               ? "Hoy"
                               : `${dias} días`
-                      }
-                      alerta={
-                        dias < 0 &&
-                        pendiente >
-                          0
                       }
                     />
                   </Box>
@@ -805,24 +665,18 @@ export default function Calendario() {
           0 && (
           <Card
             sx={{
-              borderRadius:
-                "24px",
+              borderRadius: "24px",
             }}
           >
             <CardContent
               sx={{
                 py: 7,
-
-                textAlign:
-                  "center",
+                textAlign: "center",
               }}
             >
               <Typography
                 sx={{
-                  fontSize:
-                    34,
-
-                  mb: 1,
+                  fontSize: 34,
                 }}
               >
                 📅
@@ -833,17 +687,6 @@ export default function Calendario() {
                 fontSize={18}
               >
                 Tu calendario está vacío
-              </Typography>
-
-              <Typography
-                color="text.secondary"
-                sx={{
-                  mt: 0.5,
-                }}
-              >
-                Los apartados que crees
-                aparecerán aquí
-                automáticamente.
               </Typography>
             </CardContent>
           </Card>
@@ -861,20 +704,12 @@ function ResumenCard({
   return (
     <Card
       sx={{
-        borderRadius:
-          "22px",
+        borderRadius: "22px",
       }}
     >
-      <CardContent
-        sx={{
-          p: 2.5,
-        }}
-      >
+      <CardContent sx={{ p: 2.5 }}>
         <Typography
-          sx={{
-            fontSize:
-              22,
-          }}
+          sx={{ fontSize: 22 }}
         >
           {icono}
         </Typography>
@@ -882,9 +717,7 @@ function ResumenCard({
         <Typography
           color="text.secondary"
           fontSize={13}
-          sx={{
-            mt: 1,
-          }}
+          sx={{ mt: 1 }}
         >
           {titulo}
         </Typography>
@@ -892,12 +725,8 @@ function ResumenCard({
         <Typography
           sx={{
             mt: 0.5,
-
-            fontWeight:
-              900,
-
-            fontSize:
-              23,
+            fontWeight: 900,
+            fontSize: 23,
           }}
         >
           {formatearDinero(
@@ -912,7 +741,6 @@ function ResumenCard({
 function Dato({
   titulo,
   valor,
-  alerta = false,
 }) {
   return (
     <Box>
@@ -924,17 +752,7 @@ function Dato({
       </Typography>
 
       <Typography
-        sx={{
-          mt: 0.3,
-
-          fontWeight:
-            700,
-
-          color:
-            alerta
-              ? "#EF4444"
-              : "text.primary",
-        }}
+        fontWeight={700}
       >
         {valor}
       </Typography>
