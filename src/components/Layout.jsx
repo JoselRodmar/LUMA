@@ -10,6 +10,7 @@ import {
 import {
   AppBar,
   Box,
+  Button,
   Drawer,
   IconButton,
   List,
@@ -19,6 +20,10 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
+
+import {
+  useAuth,
+} from "../context/AuthContext";
 
 const drawerWidth = 250;
 
@@ -72,6 +77,11 @@ export default function Layout({
   const location =
     useLocation();
 
+  const {
+    user,
+    cerrarSesion,
+  } = useAuth();
+
   const [
     mobileOpen,
     setMobileOpen,
@@ -81,10 +91,18 @@ export default function Layout({
     <Box
       sx={{
         height: "100%",
+
         px: 2,
         py: 2,
+
+        display: "flex",
+
+        flexDirection:
+          "column",
       }}
     >
+      {/* LOGO */}
+
       <Box
         sx={{
           height: 75,
@@ -101,9 +119,11 @@ export default function Layout({
         <Box>
           <Typography
             sx={{
-              fontWeight: 800,
+              fontWeight:
+                800,
 
-              fontSize: 26,
+              fontSize:
+                26,
 
               letterSpacing:
                 "-1px",
@@ -117,18 +137,22 @@ export default function Layout({
 
           <Typography
             sx={{
-              fontSize: 11,
+              fontSize:
+                11,
 
               color:
                 "text.secondary",
 
-              letterSpacing: 1,
+              letterSpacing:
+                1,
             }}
           >
             FINANZAS CLARAS
           </Typography>
         </Box>
       </Box>
+
+      {/* MENÚ */}
 
       <List>
         {menu.map(
@@ -148,8 +172,12 @@ export default function Layout({
                 }}
               >
                 <ListItemButton
-                  component={Link}
-                  to={item.ruta}
+                  component={
+                    Link
+                  }
+                  to={
+                    item.ruta
+                  }
                   onClick={() =>
                     setMobileOpen(
                       false
@@ -177,8 +205,11 @@ export default function Layout({
                 >
                   <Box
                     sx={{
-                      width: 36,
-                      fontSize: 20,
+                      width:
+                        36,
+
+                      fontSize:
+                        20,
                     }}
                   >
                     {
@@ -203,6 +234,72 @@ export default function Layout({
           }
         )}
       </List>
+
+      {/* USUARIO */}
+
+      <Box
+        sx={{
+          mt: "auto",
+
+          px: 1,
+          pt: 3,
+        }}
+      >
+        <Box
+          sx={{
+            p: 2,
+
+            borderRadius:
+              "16px",
+
+            backgroundColor:
+              "#F7F6FF",
+          }}
+        >
+          <Typography
+            sx={{
+              fontWeight:
+                700,
+
+              fontSize:
+                13,
+            }}
+            noWrap
+          >
+            {user?.displayName ||
+              "Usuario"}
+          </Typography>
+
+          <Typography
+            sx={{
+              color:
+                "text.secondary",
+
+              fontSize:
+                11,
+
+              mt: 0.2,
+            }}
+            noWrap
+          >
+            {user?.email}
+          </Typography>
+
+          <Button
+            fullWidth
+            size="small"
+            variant="outlined"
+            onClick={
+              cerrarSesion
+            }
+            sx={{
+              mt: 1.5,
+            }}
+          >
+            Cerrar sesión
+          </Button>
+        </Box>
+      </Box>
     </Box>
   );
 
@@ -216,7 +313,7 @@ export default function Layout({
           "100vh",
       }}
     >
-      {/* MOBILE HEADER */}
+      {/* HEADER MOBILE */}
 
       <AppBar
         position="fixed"
@@ -251,7 +348,8 @@ export default function Layout({
             sx={{
               ml: 1,
 
-              fontWeight: 800,
+              fontWeight:
+                800,
 
               color:
                 "#6D5DFB",
@@ -262,7 +360,7 @@ export default function Layout({
         </Toolbar>
       </AppBar>
 
-      {/* MENÚ */}
+      {/* DRAWER */}
 
       <Box
         component="nav"
@@ -295,8 +393,11 @@ export default function Layout({
           }}
           sx={{
             display: {
-              xs: "block",
-              md: "none",
+              xs:
+                "block",
+
+              md:
+                "none",
             },
 
             "& .MuiDrawer-paper":
@@ -316,8 +417,11 @@ export default function Layout({
           open
           sx={{
             display: {
-              xs: "none",
-              md: "block",
+              xs:
+                "none",
+
+              md:
+                "block",
             },
 
             "& .MuiDrawer-paper":
@@ -359,8 +463,11 @@ export default function Layout({
             "100vh",
 
           pt: {
-            xs: 10,
-            md: 0,
+            xs:
+              10,
+
+            md:
+              0,
           },
         }}
       >
