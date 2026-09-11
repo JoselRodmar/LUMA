@@ -3,27 +3,44 @@ import {
 } from "react";
 
 import {
+  doc,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+
+import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  Checkbox,
+  Divider,
+  FormControlLabel,
+  Link,
   TextField,
   Typography,
 } from "@mui/material";
 
 import {
-  Navigate,
+  Link as RouterLink,
   useNavigate,
 } from "react-router-dom";
+
+import {
+  db,
+} from "../services/firebase";
 
 import {
   useAuth,
 } from "../context/AuthContext";
 
+import {
+  LEGAL,
+} from "../config/legal";
+
 export default function Registro() {
   const {
-    user,
     registrar,
     iniciarConGoogle,
   } = useAuth();
@@ -52,6 +69,16 @@ export default function Registro() {
   ] = useState("");
 
   const [
+    aceptaTerminos,
+    setAceptaTerminos,
+  ] = useState(false);
+
+  const [
+    aceptaFinancieros,
+    setAceptaFinancieros,
+  ] = useState(false);
+
+  const [
     error,
     setError,
   ] = useState("");
@@ -61,18 +88,99 @@ export default function Registro() {
     setLoading,
   ] = useState(false);
 
-  if (user) {
-    return (
-      <Navigate
-        to="/"
-        replace
-      />
-    );
-  }
+  const validarConsentimientos =
+    () => {
+      if (!aceptaTerminos) {
+        setError(
+          "Debes aceptar los Términos de Uso y el Aviso de Privacidad."
+        );
+
+        return false;
+      }
+
+      if (!aceptaFinancieros) {
+        setError(
+          "Necesitamos tu consentimiento expreso para tratar los datos financieros que decidas registrar en LUMA."
+        );
+
+        return false;
+      }
+
+      return true;
+    };
+
+  const guardarConsentimiento =
+    async (
+      usuario,
+      nombreUsuario
+    ) => {
+      await setDoc(
+        doc(
+          db,
+          "users",
+          usuario.uid
+        ),
+        {
+          displayName:
+            nombreUsuario ||
+            usuario.displayName ||
+            "",
+
+          email:
+            usuario.email ||
+            "",
+
+          beta:
+            true,
+
+          terminosAceptados:
+            true,
+
+          terminosVersion:
+            LEGAL.versionTerminos,
+
+          terminosAceptadosAt:
+            serverTimestamp(),
+
+          privacidadAceptada:
+            true,
+
+          privacidadVersion:
+            LEGAL.versionPrivacidad,
+
+          privacidadAceptadaAt:
+            serverTimestamp(),
+
+          consentimientoDatosFinancieros:
+            true,
+
+          consentimientoDatosFinancierosAt:
+            serverTimestamp(),
+
+          createdAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      );
+    };
 
   const crearCuenta =
     async (event) => {
       event.preventDefault();
+
+      setError("");
+
+      if (
+        !nombre.trim()
+      ) {
+        setError(
+          "Escribe tu nombre."
+        );
+
+        return;
+      }
 
       if (
         password.length <
@@ -96,16 +204,30 @@ export default function Registro() {
         return;
       }
 
+      if (
+        !validarConsentimientos()
+      ) {
+        return;
+      }
+
       try {
         setLoading(true);
-        setError("");
 
-        await registrar({
-          nombre,
-          email:
-            email.trim(),
-          password,
-        });
+        const credencial =
+          await registrar({
+            nombre:
+              nombre.trim(),
+
+            email:
+              email.trim(),
+
+            password,
+          });
+
+        await guardarConsentimiento(
+          credencial.user,
+          nombre.trim()
+        );
 
         navigate(
           "/",
@@ -128,11 +250,26 @@ export default function Registro() {
 
   const registrarGoogle =
     async () => {
+      setError("");
+
+      if (
+        !validarConsentimientos()
+      ) {
+        return;
+      }
+
       try {
         setLoading(true);
-        setError("");
 
-        await iniciarConGoogle();
+        const credencial =
+          await iniciarConGoogle();
+
+        await guardarConsentimiento(
+          credencial.user,
+          credencial.user
+            .displayName ||
+            ""
+        );
 
         navigate(
           "/",
@@ -177,7 +314,7 @@ export default function Registro() {
             "100%",
 
           maxWidth:
-            480,
+            520,
 
           borderRadius:
             "28px",
@@ -191,27 +328,46 @@ export default function Registro() {
             },
           }}
         >
-          <Typography
+          <Box
             sx={{
               textAlign:
                 "center",
-
-              color:
-                "#6D5DFB",
-
-              fontSize:
-                34,
-
-              fontWeight:
-                900,
             }}
           >
-            LUMA
-          </Typography>
+            <Typography
+              sx={{
+                color:
+                  "#6D5DFB",
+
+                fontSize:
+                  34,
+
+                fontWeight:
+                  900,
+              }}
+            >
+              LUMA
+            </Typography>
+
+            <Typography
+              sx={{
+                color:
+                  "text.secondary",
+
+                fontSize:
+                  11,
+
+                letterSpacing:
+                  1.5,
+              }}
+            >
+              FINANZAS CLARAS · BETA
+            </Typography>
+          </Box>
 
           <Typography
             sx={{
-              mt: 2,
+              mt: 3,
 
               textAlign:
                 "center",
@@ -269,6 +425,19 @@ export default function Registro() {
             Registrarme con Google
           </Button>
 
+          <Divider
+            sx={{
+              mb: 2.5,
+            }}
+          >
+            <Typography
+              color="text.secondary"
+              fontSize={12}
+            >
+              o
+            </Typography>
+          </Divider>
+
           <Box
             component="form"
             onSubmit={
@@ -286,6 +455,7 @@ export default function Registro() {
                   event.target.value
                 )
               }
+              required
               sx={{
                 mb: 2,
               }}
@@ -346,15 +516,186 @@ export default function Registro() {
               required
             />
 
+            <Box
+              sx={{
+                mt: 3,
+                p: 2,
+                borderRadius:
+                  "16px",
+                backgroundColor:
+                  "#F7F6FF",
+              }}
+            >
+              <Typography
+                fontWeight={800}
+                fontSize={13}
+              >
+                Aviso de privacidad
+                simplificado
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={12}
+                sx={{
+                  mt: 0.7,
+                  lineHeight:
+                    1.6,
+                }}
+              >
+                {
+                  LEGAL.responsable
+                }
+                , con domicilio en{" "}
+                {
+                  LEGAL.domicilio
+                }
+                , tratará tus datos
+                de identificación y
+                los datos financieros
+                que decidas registrar
+                para crear tu cuenta,
+                operar LUMA y mostrar
+                tus cálculos
+                financieros.
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={12}
+                sx={{
+                  mt: 1,
+                  lineHeight:
+                    1.6,
+                }}
+              >
+                Puedes limitar su uso
+                o ejercer tus derechos
+                mediante{" "}
+                {
+                  LEGAL.emailPrivacidad
+                }
+                . Consulta el{" "}
+                <Link
+                  component={
+                    RouterLink
+                  }
+                  to="/privacidad"
+                  target="_blank"
+                >
+                  Aviso de Privacidad
+                </Link>{" "}
+                integral.
+              </Typography>
+            </Box>
+
+            <FormControlLabel
+              sx={{
+                mt: 2,
+                alignItems:
+                  "flex-start",
+              }}
+              control={
+                <Checkbox
+                  checked={
+                    aceptaTerminos
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setAceptaTerminos(
+                      event.target
+                        .checked
+                    )
+                  }
+                />
+              }
+              label={
+                <Typography
+                  fontSize={13}
+                  sx={{
+                    pt: 0.9,
+                  }}
+                >
+                  He leído y acepto
+                  los{" "}
+                  <Link
+                    component={
+                      RouterLink
+                    }
+                    to="/terminos"
+                    target="_blank"
+                  >
+                    Términos de Uso
+                  </Link>{" "}
+                  y el{" "}
+                  <Link
+                    component={
+                      RouterLink
+                    }
+                    to="/privacidad"
+                    target="_blank"
+                  >
+                    Aviso de Privacidad
+                  </Link>
+                  .
+                </Typography>
+              }
+            />
+
+            <FormControlLabel
+              sx={{
+                mt: 0.5,
+                alignItems:
+                  "flex-start",
+              }}
+              control={
+                <Checkbox
+                  checked={
+                    aceptaFinancieros
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setAceptaFinancieros(
+                      event.target
+                        .checked
+                    )
+                  }
+                />
+              }
+              label={
+                <Typography
+                  fontSize={13}
+                  sx={{
+                    pt: 0.9,
+                  }}
+                >
+                  Otorgo mi
+                  consentimiento
+                  expreso para que
+                  LUMA trate los datos
+                  financieros o
+                  patrimoniales que yo
+                  decida registrar en
+                  la aplicación para
+                  proporcionarme sus
+                  funciones.
+                </Typography>
+              }
+            />
+
             <Button
               type="submit"
               fullWidth
               variant="contained"
               disabled={
-                loading
+                loading ||
+                !aceptaTerminos ||
+                !aceptaFinancieros
               }
               sx={{
-                mt: 3,
+                mt: 2.5,
                 py: 1.4,
               }}
             >
@@ -372,6 +713,13 @@ export default function Registro() {
               mt: 2.5,
             }}
           >
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+            >
+              ¿Ya tienes una cuenta?
+            </Typography>
+
             <Button
               onClick={() =>
                 navigate(
@@ -379,7 +727,7 @@ export default function Registro() {
                 )
               }
             >
-              Ya tengo una cuenta
+              Iniciar sesión
             </Button>
           </Box>
         </CardContent>

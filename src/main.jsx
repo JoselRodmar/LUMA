@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 
 import App from "./App";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import {
   registerServiceWorker,
@@ -26,34 +27,25 @@ const theme =
       mode: "light",
 
       primary: {
-        main:
-          "#6D5DFB",
+        main: "#6D5DFB",
       },
 
       success: {
-        main:
-          "#10B981",
+        main: "#10B981",
       },
 
       error: {
-        main:
-          "#EF4444",
+        main: "#EF4444",
       },
 
       background: {
-        default:
-          "#F6F7FB",
-
-        paper:
-          "#FFFFFF",
+        default: "#F6F7FB",
+        paper: "#FFFFFF",
       },
 
       text: {
-        primary:
-          "#1E2330",
-
-        secondary:
-          "#73798A",
+        primary: "#1E2330",
+        secondary: "#73798A",
       },
     },
 
@@ -62,41 +54,30 @@ const theme =
         '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
 
       h4: {
-        fontWeight:
-          700,
+        fontWeight: 700,
       },
 
       h5: {
-        fontWeight:
-          700,
+        fontWeight: 700,
       },
 
       button: {
-        textTransform:
-          "none",
-
-        fontWeight:
-          600,
+        textTransform: "none",
+        fontWeight: 600,
       },
     },
 
     shape: {
-      borderRadius:
-        16,
+      borderRadius: 16,
     },
 
     components: {
       MuiButton: {
         styleOverrides: {
           root: {
-            borderRadius:
-              12,
-
-            paddingLeft:
-              20,
-
-            paddingRight:
-              20,
+            borderRadius: 12,
+            paddingLeft: 20,
+            paddingRight: 20,
           },
         },
       },
@@ -123,15 +104,11 @@ createRoot(
     >
       <CssBaseline />
 
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </ThemeProvider>
   </StrictMode>
 );
-
-/*
-========================================
-PWA
-========================================
-*/
 
 registerServiceWorker();

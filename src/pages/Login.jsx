@@ -3,18 +3,24 @@ import {
 } from "react";
 
 import {
+  deleteUser,
+  getAdditionalUserInfo,
+} from "firebase/auth";
+
+import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
   Divider,
+  Link,
   TextField,
   Typography,
 } from "@mui/material";
 
 import {
-  Navigate,
+  Link as RouterLink,
   useLocation,
   useNavigate,
 } from "react-router-dom";
@@ -25,7 +31,6 @@ import {
 
 export default function Login() {
   const {
-    user,
     iniciarSesion,
     iniciarConGoogle,
     recuperarPassword,
@@ -65,15 +70,6 @@ export default function Login() {
   const destino =
     location.state?.from ||
     "/";
-
-  if (user) {
-    return (
-      <Navigate
-        to="/"
-        replace
-      />
-    );
-  }
 
   const entrar =
     async (event) => {
@@ -115,7 +111,37 @@ export default function Login() {
         setError("");
         setMensaje("");
 
-        await iniciarConGoogle();
+        const credencial =
+          await iniciarConGoogle();
+
+        const info =
+          getAdditionalUserInfo(
+            credencial
+          );
+
+        /*
+          Si Google acaba de crear
+          esta cuenta, significa que
+          todavía no pasó por Registro
+          ni otorgó los consentimientos.
+
+          Eliminamos inmediatamente
+          esa cuenta vacía.
+        */
+
+        if (
+          info?.isNewUser
+        ) {
+          await deleteUser(
+            credencial.user
+          );
+
+          setError(
+            "Esta cuenta todavía no está registrada en LUMA. Selecciona Crear cuenta para revisar y aceptar los Términos y el Aviso de Privacidad."
+          );
+
+          return;
+        }
 
         navigate(
           destino,
@@ -243,15 +269,13 @@ export default function Login() {
                   "text.secondary",
 
                 fontSize:
-                  12,
+                  11,
 
                 letterSpacing:
                   1.5,
-
-                mt: -0.5,
               }}
             >
-              FINANZAS CLARAS
+              FINANZAS CLARAS · BETA
             </Typography>
 
             <Typography
@@ -437,6 +461,52 @@ export default function Login() {
               Crear cuenta
             </Button>
           </Typography>
+
+          <Divider
+            sx={{
+              my: 2.5,
+            }}
+          />
+
+          <Box
+            sx={{
+              textAlign:
+                "center",
+            }}
+          >
+            <Link
+              component={
+                RouterLink
+              }
+              to="/privacidad"
+              fontSize={12}
+              underline="hover"
+            >
+              Privacidad
+            </Link>
+
+            <Typography
+              component="span"
+              color="text.secondary"
+              fontSize={12}
+              sx={{
+                mx: 1,
+              }}
+            >
+              ·
+            </Typography>
+
+            <Link
+              component={
+                RouterLink
+              }
+              to="/terminos"
+              fontSize={12}
+              underline="hover"
+            >
+              Términos
+            </Link>
+          </Box>
         </CardContent>
       </Card>
     </Box>

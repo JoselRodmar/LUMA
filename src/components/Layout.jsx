@@ -69,6 +69,12 @@ const menu = [
     ruta: "/calendario",
     icono: "📅",
   },
+
+  {
+    nombre: "Mi cuenta",
+    ruta: "/configuracion",
+    icono: "⚙️",
+  },
 ];
 
 export default function Layout({
@@ -101,8 +107,6 @@ export default function Layout({
           "column",
       }}
     >
-      {/* LOGO */}
-
       <Box
         sx={{
           height: 75,
@@ -151,8 +155,6 @@ export default function Layout({
           </Typography>
         </Box>
       </Box>
-
-      {/* MENÚ */}
 
       <List>
         {menu.map(
@@ -235,8 +237,6 @@ export default function Layout({
         )}
       </List>
 
-      {/* USUARIO */}
-
       <Box
         sx={{
           mt: "auto",
@@ -313,8 +313,6 @@ export default function Layout({
           "100vh",
       }}
     >
-      {/* HEADER MOBILE */}
-
       <AppBar
         position="fixed"
         elevation={0}
@@ -360,8 +358,6 @@ export default function Layout({
         </Toolbar>
       </AppBar>
 
-      {/* DRAWER */}
-
       <Box
         component="nav"
         sx={{
@@ -375,8 +371,6 @@ export default function Layout({
           },
         }}
       >
-        {/* MOBILE */}
-
         <Drawer
           variant="temporary"
           open={
@@ -410,8 +404,6 @@ export default function Layout({
           {drawer}
         </Drawer>
 
-        {/* DESKTOP */}
-
         <Drawer
           variant="permanent"
           open
@@ -443,8 +435,6 @@ export default function Layout({
           {drawer}
         </Drawer>
       </Box>
-
-      {/* CONTENIDO */}
 
       <Box
         component="main"
