@@ -15,12 +15,6 @@ import {
   CardContent,
   CircularProgress,
   LinearProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
@@ -49,35 +43,37 @@ import {
   formatearDinero,
 } from "../utils/frecuencia";
 
-const lugares = [
-  "Casa",
-  "Consultorio",
-  "Extras",
-];
+import {
+  calcularProyeccionMensualIngreso,
+} from "../utils/ingresos";
+
+import {
+  obtenerNombreEspacio,
+} from "../utils/espacios";
 
 const obtenerMesActual = () => {
-  const fecha = new Date();
+  const fecha =
+    new Date();
 
   return `${fecha.getFullYear()}-${String(
     fecha.getMonth() + 1
   ).padStart(2, "0")}`;
 };
 
-const calcularMensual = (
-  monto,
-  frecuencia
+const calcularMensualGasto = (
+  gasto
 ) =>
   calcularSemanal(
-    monto,
-    frecuencia
+    gasto.monto,
+    gasto.frecuencia
   ) * 4.333;
 
-const porcentaje = (
+const calcularPorcentaje = (
   real,
-  planeado
+  referencia
 ) => {
   if (
-    Number(planeado) <= 0
+    referencia <= 0
   ) {
     return real > 0
       ? 100
@@ -85,35 +81,18 @@ const porcentaje = (
   }
 
   return (
-    (Number(real) /
-      Number(planeado)) *
+    (real /
+      referencia) *
     100
   );
 };
 
-const crearResumenEspacios =
-  () => ({
-    Casa: {
-      ingresoPlaneado: 0,
-      ingresoReal: 0,
-      gastoPlaneado: 0,
-      gastoReal: 0,
-    },
-
-    Consultorio: {
-      ingresoPlaneado: 0,
-      ingresoReal: 0,
-      gastoPlaneado: 0,
-      gastoReal: 0,
-    },
-
-    Extras: {
-      ingresoPlaneado: 0,
-      ingresoReal: 0,
-      gastoPlaneado: 0,
-      gastoReal: 0,
-    },
-  });
+const nombreEspacioIngreso = (
+  registro
+) =>
+  registro.origenNombre ||
+  registro.lugar ||
+  "Sin espacio";
 
 export default function PlaneadoReal() {
   const {
@@ -189,7 +168,9 @@ export default function PlaneadoReal() {
           setIngresos(
             ingresosSnapshot.docs.map(
               (documento) => ({
-                id: documento.id,
+                id:
+                  documento.id,
+
                 ...documento.data(),
               })
             )
@@ -198,7 +179,9 @@ export default function PlaneadoReal() {
           setGastos(
             gastosSnapshot.docs.map(
               (documento) => ({
-                id: documento.id,
+                id:
+                  documento.id,
+
                 ...documento.data(),
               })
             )
@@ -207,7 +190,9 @@ export default function PlaneadoReal() {
           setMovimientos(
             movimientosSnapshot.docs.map(
               (documento) => ({
-                id: documento.id,
+                id:
+                  documento.id,
+
                 ...documento.data(),
               })
             )
@@ -244,7 +229,13 @@ export default function PlaneadoReal() {
       ]
     );
 
-  const ingresoPlaneado =
+  /*
+    ==============================
+    TOTALES PROYECTADOS
+    ==============================
+  */
+
+  const ingresoProyectado =
     useMemo(
       () =>
         ingresos.reduce(
@@ -253,13 +244,16 @@ export default function PlaneadoReal() {
             ingreso
           ) =>
             total +
-            calcularMensual(
-              ingreso.monto,
-              ingreso.frecuencia
+            calcularProyeccionMensualIngreso(
+              ingreso,
+              movimientos
             ),
           0
         ),
-      [ingresos]
+      [
+        ingresos,
+        movimientos,
+      ]
     );
 
   const gastoPlaneado =
@@ -271,14 +265,19 @@ export default function PlaneadoReal() {
             gasto
           ) =>
             total +
-            calcularMensual(
-              gasto.monto,
-              gasto.frecuencia
+            calcularMensualGasto(
+              gasto
             ),
           0
         ),
       [gastos]
     );
+
+  /*
+    ==============================
+    TOTALES REALES
+    ==============================
+  */
 
   const ingresoReal =
     useMemo(
@@ -322,155 +321,206 @@ export default function PlaneadoReal() {
       [movimientosMes]
     );
 
-  const resumenEspacios =
-    useMemo(() => {
-      const resumen =
-        crearResumenEspacios();
-
-      ingresos.forEach(
-        (ingreso) => {
-          if (
-            resumen[
-              ingreso.lugar
-            ]
-          ) {
-            resumen[
-              ingreso.lugar
-            ].ingresoPlaneado +=
-              calcularMensual(
-                ingreso.monto,
-                ingreso.frecuencia
-              );
-          }
-        }
-      );
-
-      gastos.forEach(
-        (gasto) => {
-          if (
-            resumen[
-              gasto.lugar
-            ]
-          ) {
-            resumen[
-              gasto.lugar
-            ].gastoPlaneado +=
-              calcularMensual(
-                gasto.monto,
-                gasto.frecuencia
-              );
-          }
-        }
-      );
-
-      movimientosMes.forEach(
-        (movimiento) => {
-          if (
-            !resumen[
-              movimiento.lugar
-            ]
-          ) {
-            return;
-          }
-
-          const monto =
-            Number(
-              movimiento.monto ||
-                0
-            );
-
-          if (
-            movimiento.tipo ===
-            "Ingreso"
-          ) {
-            resumen[
-              movimiento.lugar
-            ].ingresoReal +=
-              monto;
-          } else {
-            resumen[
-              movimiento.lugar
-            ].gastoReal +=
-              monto;
-          }
-        }
-      );
-
-      return resumen;
-    }, [
-      ingresos,
-      gastos,
-      movimientosMes,
-    ]);
-
-  const datosIngresos =
-    lugares.map(
-      (lugar) => ({
-        nombre: lugar,
-
-        Planeado:
-          Math.round(
-            resumenEspacios[
-              lugar
-            ].ingresoPlaneado
-          ),
-
-        Real:
-          Math.round(
-            resumenEspacios[
-              lugar
-            ].ingresoReal
-          ),
-      })
-    );
-
-  const datosGastos =
-    lugares.map(
-      (lugar) => ({
-        nombre: lugar,
-
-        Planeado:
-          Math.round(
-            resumenEspacios[
-              lugar
-            ].gastoPlaneado
-          ),
-
-        Real:
-          Math.round(
-            resumenEspacios[
-              lugar
-            ].gastoReal
-          ),
-      })
-    );
-
-  const diferenciaIngreso =
-    ingresoReal -
-    ingresoPlaneado;
-
-  const diferenciaGasto =
-    gastoPlaneado -
-    gastoReal;
-
-  const resultadoPlaneado =
-    ingresoPlaneado -
+  const resultadoProyectado =
+    ingresoProyectado -
     gastoPlaneado;
 
   const resultadoReal =
     ingresoReal -
     gastoReal;
 
-  const avanceIngresos =
-    porcentaje(
+  const diferenciaIngreso =
+    ingresoReal -
+    ingresoProyectado;
+
+  const diferenciaGasto =
+    gastoPlaneado -
+    gastoReal;
+
+  const porcentajeIngreso =
+    calcularPorcentaje(
       ingresoReal,
-      ingresoPlaneado
+      ingresoProyectado
     );
 
-  const avanceGastos =
-    porcentaje(
+  const porcentajeGasto =
+    calcularPorcentaje(
       gastoReal,
       gastoPlaneado
+    );
+
+  /*
+    ==============================
+    ESPACIOS
+    ==============================
+  */
+
+  const espacios =
+    useMemo(() => {
+      const mapa = {};
+
+      const asegurarEspacio =
+        (nombre) => {
+          if (!mapa[nombre]) {
+            mapa[nombre] = {
+              nombre,
+
+              ingresoProyectado:
+                0,
+
+              ingresoReal:
+                0,
+
+              gastoPlaneado:
+                0,
+
+              gastoReal:
+                0,
+            };
+          }
+
+          return mapa[nombre];
+        };
+
+      /*
+        INGRESOS PROYECTADOS
+      */
+
+      ingresos.forEach(
+        (ingreso) => {
+          const nombre =
+            nombreEspacioIngreso(
+              ingreso
+            );
+
+          const espacio =
+            asegurarEspacio(
+              nombre
+            );
+
+          espacio.ingresoProyectado +=
+            calcularProyeccionMensualIngreso(
+              ingreso,
+              movimientos
+            );
+        }
+      );
+
+      /*
+        GASTOS PLANEADOS
+      */
+
+      gastos.forEach(
+        (gasto) => {
+          const nombre =
+            obtenerNombreEspacio(
+              gasto
+            );
+
+          const espacio =
+            asegurarEspacio(
+              nombre
+            );
+
+          espacio.gastoPlaneado +=
+            calcularMensualGasto(
+              gasto
+            );
+        }
+      );
+
+      /*
+        MOVIMIENTOS REALES
+      */
+
+      movimientosMes.forEach(
+        (movimiento) => {
+          const nombre =
+            movimiento.tipo ===
+            "Ingreso"
+              ? nombreEspacioIngreso(
+                  movimiento
+                )
+              : obtenerNombreEspacio(
+                  movimiento
+                );
+
+          const espacio =
+            asegurarEspacio(
+              nombre
+            );
+
+          if (
+            movimiento.tipo ===
+            "Ingreso"
+          ) {
+            espacio.ingresoReal +=
+              Number(
+                movimiento.monto ||
+                  0
+              );
+          } else {
+            espacio.gastoReal +=
+              Number(
+                movimiento.monto ||
+                  0
+              );
+          }
+        }
+      );
+
+      return Object.values(
+        mapa
+      )
+        .map(
+          (espacio) => ({
+            ...espacio,
+
+            resultadoProyectado:
+              espacio.ingresoProyectado -
+              espacio.gastoPlaneado,
+
+            resultadoReal:
+              espacio.ingresoReal -
+              espacio.gastoReal,
+          })
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(
+              b.resultadoReal
+            ) -
+            Math.abs(
+              a.resultadoReal
+            )
+        );
+    }, [
+      ingresos,
+      gastos,
+      movimientos,
+      movimientosMes,
+    ]);
+
+  const datosGrafica =
+    useMemo(
+      () =>
+        espacios.map(
+          (espacio) => ({
+            nombre:
+              espacio.nombre,
+
+            Proyectado:
+              Math.round(
+                espacio.resultadoProyectado
+              ),
+
+            Real:
+              Math.round(
+                espacio.resultadoReal
+              ),
+          })
+        ),
+      [espacios]
     );
 
   if (loading) {
@@ -478,9 +528,10 @@ export default function PlaneadoReal() {
       <Box
         sx={{
           minHeight: "70vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
+
+          display: "grid",
+
+          placeItems: "center",
         }}
       >
         <CircularProgress />
@@ -496,20 +547,31 @@ export default function PlaneadoReal() {
           sm: 3,
           lg: 4,
         },
+
         maxWidth: 1450,
+
         mx: "auto",
       }}
     >
       <Box
         sx={{
           display: "flex",
+
           flexDirection: {
             xs: "column",
             sm: "row",
           },
+
           justifyContent:
             "space-between",
+
+          alignItems: {
+            xs: "stretch",
+            sm: "flex-start",
+          },
+
           gap: 2,
+
           mb: 3,
         }}
       >
@@ -520,18 +582,22 @@ export default function PlaneadoReal() {
                 xs: 29,
                 md: 34,
               },
-              fontWeight: 800,
+
+              fontWeight: 900,
             }}
           >
-            Planeado vs. real
+            Proyectado vs. real
           </Typography>
 
           <Typography
             color="text.secondary"
+            sx={{
+              mt: 0.5,
+            }}
           >
             Compara lo que esperabas
-            con lo que realmente
-            ocurrió.
+            generar y gastar con lo que
+            realmente ocurrió.
           </Typography>
         </Box>
 
@@ -557,54 +623,84 @@ export default function PlaneadoReal() {
       {error && (
         <Alert
           severity="error"
-          sx={{ mb: 3 }}
+          sx={{
+            mb: 3,
+            borderRadius: "16px",
+          }}
         >
           {error}
         </Alert>
       )}
 
+      <Alert
+        severity="info"
+        sx={{
+          mb: 3,
+          borderRadius: "18px",
+        }}
+      >
+        La proyección utiliza tu
+        configuración financiera actual.
+        Los ingresos variables e
+        irregulares utilizan su historial
+        reciente cuando está disponible.
+        Por ahora LUMA todavía no conserva
+        versiones históricas del
+        presupuesto de cada mes.
+      </Alert>
+
+      {/* RESUMEN GENERAL */}
+
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
+
             sm:
               "repeat(2, 1fr)",
+
             xl:
               "repeat(4, 1fr)",
           },
+
           gap: 2,
+
           mb: 3,
         }}
       >
         <ComparacionCard
           titulo="Ingresos"
-          planeado={
-            ingresoPlaneado
+          referencia={
+            ingresoProyectado
           }
-          real={ingresoReal}
+          real={
+            ingresoReal
+          }
           diferencia={
             diferenciaIngreso
           }
-          tipo="ingreso"
+          ingresos
         />
 
         <ComparacionCard
           titulo="Gastos"
-          planeado={
+          referencia={
             gastoPlaneado
           }
-          real={gastoReal}
+          real={
+            gastoReal
+          }
           diferencia={
             diferenciaGasto
           }
-          tipo="gasto"
         />
 
         <ResultadoCard
-          titulo="Resultado planeado"
+          titulo="Resultado proyectado"
           valor={
-            resultadoPlaneado
+            resultadoProyectado
           }
         />
 
@@ -616,47 +712,55 @@ export default function PlaneadoReal() {
         />
       </Box>
 
+      {/* PROGRESO */}
+
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
+
             lg:
               "repeat(2, 1fr)",
           },
+
           gap: 2,
-          mb: 3,
+
+          mb: 4,
         }}
       >
         <Progreso
-          titulo="Ingresos recibidos"
-          porcentajeValor={
-            avanceIngresos
+          titulo="Ingreso registrado respecto a proyección"
+          valor={
+            porcentajeIngreso
           }
           texto={
-            diferenciaIngreso <
+            diferenciaIngreso >=
             0
-              ? `Faltan ${formatearDinero(
+              ? `Has registrado ${formatearDinero(
+                  diferenciaIngreso
+                )} por encima de la proyección actual.`
+              : `Faltan ${formatearDinero(
                   Math.abs(
                     diferenciaIngreso
                   )
-                )} por recibir.`
-              : "Has alcanzado o superado lo planeado."
+                )} para alcanzar la proyección actual.`
           }
         />
 
         <Progreso
-          titulo="Presupuesto utilizado"
-          porcentajeValor={
-            avanceGastos
+          titulo="Gasto utilizado respecto a lo planeado"
+          valor={
+            porcentajeGasto
           }
           texto={
             diferenciaGasto >=
             0
-              ? `Quedan ${formatearDinero(
+              ? `Has gastado ${formatearDinero(
                   diferenciaGasto
-                )} del presupuesto.`
-              : `Excediste por ${formatearDinero(
+                )} menos de lo planeado.`
+              : `Superaste lo planeado por ${formatearDinero(
                   Math.abs(
                     diferenciaGasto
                   )
@@ -665,126 +769,132 @@ export default function PlaneadoReal() {
         />
       </Box>
 
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: {
-            xs: "1fr",
-            xl:
-              "repeat(2, 1fr)",
-          },
-          gap: 2,
-          mb: 3,
-        }}
-      >
-        <Grafica
-          titulo="Ingresos por espacio"
-          datos={datosIngresos}
-        />
-
-        <Grafica
-          titulo="Gastos por espacio"
-          datos={datosGastos}
-        />
-      </Box>
+      {/* COMPARACIÓN POR ESPACIO */}
 
       <Typography
         sx={{
-          mt: 4,
+          fontWeight: 900,
+
+          fontSize: 21,
+
           mb: 2,
-          fontWeight: 800,
-          fontSize: 22,
         }}
       >
-        Tus espacios
+        Resultado por espacio
       </Typography>
+
+      <Card
+        sx={{
+          borderRadius: "24px",
+
+          mb: 3,
+        }}
+      >
+        <CardContent
+          sx={{
+            p: 3,
+          }}
+        >
+          {datosGrafica.length >
+          0 ? (
+            <Box
+              sx={{
+                height: 360,
+              }}
+            >
+              <ResponsiveContainer>
+                <BarChart
+                  data={
+                    datosGrafica
+                  }
+                >
+                  <CartesianGrid
+                    strokeDasharray="4 4"
+                    vertical={
+                      false
+                    }
+                  />
+
+                  <XAxis
+                    dataKey="nombre"
+                  />
+
+                  <YAxis />
+
+                  <Tooltip
+                    formatter={(
+                      value
+                    ) =>
+                      formatearDinero(
+                        value
+                      )
+                    }
+                  />
+
+                  <Legend />
+
+                  <Bar
+                    dataKey="Proyectado"
+                    fill="#C7C1FF"
+                  />
+
+                  <Bar
+                    dataKey="Real"
+                    fill="#6D5DFB"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                py: 7,
+                textAlign:
+                  "center",
+              }}
+            >
+              <Typography
+                color="text.secondary"
+              >
+                Todavía no hay
+                información para
+                comparar.
+              </Typography>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* DETALLE */}
 
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
+
             md:
+              "repeat(2, 1fr)",
+
+            xl:
               "repeat(3, 1fr)",
           },
+
           gap: 2,
         }}
       >
-        {lugares.map(
-          (lugar) => {
-            const info =
-              resumenEspacios[
-                lugar
-              ];
-
-            return (
-              <Card
-                key={lugar}
-                sx={{
-                  borderRadius:
-                    "24px",
-                }}
-              >
-                <CardContent
-                  sx={{ p: 3 }}
-                >
-                  <Typography
-                    fontWeight={800}
-                    fontSize={20}
-                    sx={{ mb: 2 }}
-                  >
-                    {lugar}
-                  </Typography>
-
-                  <Linea
-                    titulo="Ingreso planeado"
-                    valor={
-                      info.ingresoPlaneado
-                    }
-                  />
-
-                  <Linea
-                    titulo="Ingreso real"
-                    valor={
-                      info.ingresoReal
-                    }
-                  />
-
-                  <Linea
-                    titulo="Gasto planeado"
-                    valor={
-                      info.gastoPlaneado
-                    }
-                  />
-
-                  <Linea
-                    titulo="Gasto real"
-                    valor={
-                      info.gastoReal
-                    }
-                  />
-
-                  <Box
-                    sx={{
-                      mt: 2,
-                      pt: 2,
-                      borderTop:
-                        "1px solid #EEEFF3",
-                    }}
-                  >
-                    <Linea
-                      titulo="Resultado real"
-                      valor={
-                        info.ingresoReal -
-                        info.gastoReal
-                      }
-                      fuerte
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            );
-          }
+        {espacios.map(
+          (espacio) => (
+            <EspacioCard
+              key={
+                espacio.nombre
+              }
+              espacio={
+                espacio
+              }
+            />
+          )
         )}
       </Box>
     </Box>
@@ -793,21 +903,50 @@ export default function PlaneadoReal() {
 
 function ComparacionCard({
   titulo,
-  planeado,
+  referencia,
   real,
   diferencia,
-  tipo,
+  ingresos = false,
 }) {
+  let texto;
+
+  if (ingresos) {
+    texto =
+      diferencia >= 0
+        ? `${formatearDinero(
+            diferencia
+          )} por encima`
+        : `${formatearDinero(
+            Math.abs(
+              diferencia
+            )
+          )} por debajo`;
+  } else {
+    texto =
+      diferencia >= 0
+        ? `${formatearDinero(
+            diferencia
+          )} sin gastar`
+        : `${formatearDinero(
+            Math.abs(
+              diferencia
+            )
+          )} excedido`;
+  }
+
   return (
     <Card
       sx={{
         borderRadius: "22px",
       }}
     >
-      <CardContent>
+      <CardContent
+        sx={{
+          p: 2.5,
+        }}
+      >
         <Typography
-          color="text.secondary"
-          fontWeight={700}
+          fontWeight={900}
         >
           {titulo}
         </Typography>
@@ -815,30 +954,39 @@ function ComparacionCard({
         <Typography
           color="text.secondary"
           fontSize={12}
-          sx={{ mt: 2 }}
+          sx={{
+            mt: 2,
+          }}
         >
-          Planeado
+          {ingresos
+            ? "Proyectado"
+            : "Planeado"}
         </Typography>
 
         <Typography
           fontWeight={800}
         >
           {formatearDinero(
-            planeado
+            referencia
           )}
         </Typography>
 
         <Typography
           color="text.secondary"
           fontSize={12}
-          sx={{ mt: 1.5 }}
+          sx={{
+            mt: 1.5,
+          }}
         >
           Real
         </Typography>
 
         <Typography
-          fontWeight={900}
-          fontSize={25}
+          sx={{
+            fontWeight: 900,
+
+            fontSize: 25,
+          }}
         >
           {formatearDinero(
             real
@@ -846,28 +994,13 @@ function ComparacionCard({
         </Typography>
 
         <Typography
+          color="text.secondary"
           fontSize={12}
-          sx={{ mt: 1 }}
+          sx={{
+            mt: 1,
+          }}
         >
-          {tipo === "ingreso"
-            ? diferencia >= 0
-              ? `+${formatearDinero(
-                  diferencia
-                )}`
-              : `${formatearDinero(
-                  Math.abs(
-                    diferencia
-                  )
-                )} pendiente`
-            : diferencia >= 0
-              ? `${formatearDinero(
-                  diferencia
-                )} disponible`
-              : `${formatearDinero(
-                  Math.abs(
-                    diferencia
-                  )
-                )} excedido`}
+          {texto}
         </Typography>
       </CardContent>
     </Card>
@@ -884,7 +1017,11 @@ function ResultadoCard({
         borderRadius: "22px",
       }}
     >
-      <CardContent>
+      <CardContent
+        sx={{
+          p: 2.5,
+        }}
+      >
         <Typography
           color="text.secondary"
         >
@@ -894,8 +1031,11 @@ function ResultadoCard({
         <Typography
           sx={{
             mt: 3,
+
             fontSize: 28,
+
             fontWeight: 900,
+
             color:
               valor >= 0
                 ? "#6D5DFB"
@@ -913,42 +1053,58 @@ function ResultadoCard({
 
 function Progreso({
   titulo,
-  porcentajeValor,
+  valor,
   texto,
 }) {
+  const visual =
+    Math.min(
+      100,
+      Math.max(
+        0,
+        valor
+      )
+    );
+
   return (
     <Card
       sx={{
         borderRadius: "24px",
       }}
     >
-      <CardContent sx={{ p: 3 }}>
+      <CardContent
+        sx={{
+          p: 3,
+        }}
+      >
         <Typography
-          fontWeight={800}
+          fontWeight={900}
         >
           {titulo}
         </Typography>
 
         <Typography
-          fontSize={28}
-          fontWeight={900}
-          sx={{ mt: 2 }}
+          sx={{
+            fontSize: 28,
+
+            fontWeight: 900,
+
+            mt: 2,
+          }}
         >
           {Math.round(
-            porcentajeValor
+            valor
           )}
           %
         </Typography>
 
         <LinearProgress
           variant="determinate"
-          value={Math.min(
-            100,
-            porcentajeValor
-          )}
+          value={visual}
           sx={{
             height: 10,
+
             borderRadius: 10,
+
             my: 1.5,
           }}
         />
@@ -964,87 +1120,136 @@ function Progreso({
   );
 }
 
-function Grafica({
-  titulo,
-  datos,
+function EspacioCard({
+  espacio,
 }) {
   return (
     <Card
       sx={{
-        borderRadius: "24px",
+        borderRadius: "22px",
       }}
     >
-      <CardContent sx={{ p: 3 }}>
+      <CardContent
+        sx={{
+          p: 2.5,
+        }}
+      >
         <Typography
-          fontWeight={800}
-          fontSize={18}
+          fontWeight={900}
+          fontSize={19}
         >
-          {titulo}
+          {espacio.nombre}
         </Typography>
 
-        <Box
+        <Typography
+          color="text.secondary"
+          fontSize={12}
           sx={{
-            height: 320,
             mt: 2,
           }}
         >
-          <ResponsiveContainer>
-            <BarChart
-              data={datos}
-            >
-              <CartesianGrid
-                strokeDasharray="4 4"
-                vertical={false}
-              />
+          PROYECTADO
+        </Typography>
 
-              <XAxis
-                dataKey="nombre"
-              />
+        <Fila
+          titulo="Ingresos"
+          valor={
+            espacio.ingresoProyectado
+          }
+          color="#10B981"
+        />
 
-              <YAxis />
+        <Fila
+          titulo="Gastos"
+          valor={
+            espacio.gastoPlaneado
+          }
+          color="#EF4444"
+        />
 
-              <Tooltip
-                formatter={(
-                  value
-                ) =>
-                  formatearDinero(
-                    value
-                  )
-                }
-              />
+        <Fila
+          titulo="Resultado"
+          valor={
+            espacio.resultadoProyectado
+          }
+          color={
+            espacio.resultadoProyectado >=
+            0
+              ? "#6D5DFB"
+              : "#EF4444"
+          }
+          fuerte
+        />
 
-              <Legend />
+        <Box
+          sx={{
+            borderTop:
+              "1px solid #EEEEEE",
 
-              <Bar
-                dataKey="Planeado"
-                fill="#C7C1FF"
-              />
+            mt: 2,
 
-              <Bar
-                dataKey="Real"
-                fill="#6D5DFB"
-              />
-            </BarChart>
-          </ResponsiveContainer>
+            pt: 2,
+          }}
+        >
+          <Typography
+            color="text.secondary"
+            fontSize={12}
+          >
+            REAL
+          </Typography>
+
+          <Fila
+            titulo="Ingresos"
+            valor={
+              espacio.ingresoReal
+            }
+            color="#10B981"
+          />
+
+          <Fila
+            titulo="Gastos"
+            valor={
+              espacio.gastoReal
+            }
+            color="#EF4444"
+          />
+
+          <Fila
+            titulo="Resultado"
+            valor={
+              espacio.resultadoReal
+            }
+            color={
+              espacio.resultadoReal >=
+              0
+                ? "#6D5DFB"
+                : "#EF4444"
+            }
+            fuerte
+          />
         </Box>
       </CardContent>
     </Card>
   );
 }
 
-function Linea({
+function Fila({
   titulo,
   valor,
+  color,
   fuerte = false,
 }) {
   return (
     <Box
       sx={{
         display: "flex",
+
         justifyContent:
           "space-between",
+
         gap: 2,
-        mb: 1.3,
+
+        mt: 1,
       }}
     >
       <Typography
@@ -1054,11 +1259,19 @@ function Linea({
       </Typography>
 
       <Typography
-        fontWeight={
-          fuerte
-            ? 900
-            : 700
-        }
+        sx={{
+          fontWeight:
+            fuerte
+              ? 900
+              : 700,
+
+          fontSize:
+            fuerte
+              ? 17
+              : 14,
+
+          color,
+        }}
       >
         {formatearDinero(
           valor

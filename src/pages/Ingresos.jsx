@@ -8,8 +8,11 @@
 import {
   addDoc,
   deleteDoc,
+  doc,
+  getDoc,
   getDocs,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
@@ -21,19 +24,22 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
+
+import {
+  db,
+} from "../services/firebase";
 
 import {
   useAuth,
@@ -45,15 +51,18 @@ import {
 } from "../services/userData";
 
 import {
-  calcularSemanal,
   formatearDinero,
 } from "../utils/frecuencia";
 
-const lugares = [
-  "Casa",
-  "Consultorio",
-  "Extras",
-];
+import {
+  FUENTES_INGRESO,
+  MODALIDADES_INGRESO,
+  TIPOS_ORIGEN,
+  calcularPromedioSemanalReal,
+  calcularProyeccionMensualIngreso,
+  calcularProyeccionSemanalIngreso,
+  obtenerHoy,
+} from "../utils/ingresos";
 
 const frecuencias = [
   "Semanal",
@@ -64,25 +73,35 @@ const frecuencias = [
   "Anual",
 ];
 
-const fuentes = [
-  "Sueldo",
-  "Consultas / Servicios",
-  "Ventas",
-  "Honorarios",
-  "Comisiones",
-  "Rentas",
-  "Inversiones",
-  "Transferencias / Apoyo",
-  "Otros",
-];
-
 const formularioInicial = {
-  lugar: "Casa",
+  origenId: "",
   fuente: "Sueldo",
   nombre: "",
+  modalidad: "Fijo",
+
   monto: "",
   frecuencia: "Mensual",
+
+  unidad: "Consulta",
+  valorUnidad: "",
+  unidadesEstimadasSemana:
+    "",
 };
+
+const crearIdOrigen =
+  () => {
+    if (
+      typeof crypto !==
+        "undefined" &&
+      crypto.randomUUID
+    ) {
+      return crypto.randomUUID();
+    }
+
+    return `${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+  };
 
 export default function Ingresos() {
   const {
@@ -92,6 +111,16 @@ export default function Ingresos() {
   const [
     ingresos,
     setIngresos,
+  ] = useState([]);
+
+  const [
+    movimientos,
+    setMovimientos,
+  ] = useState([]);
+
+  const [
+    origenes,
+    setOrigenes,
   ] = useState([]);
 
   const [
@@ -127,48 +156,165 @@ export default function Ingresos() {
   ] = useState("");
 
   const [
-    filtroLugar,
-    setFiltroLugar,
+    filtroOrigen,
+    setFiltroOrigen,
   ] = useState("");
 
   const [
-    filtroFuente,
-    setFiltroFuente,
+    filtroModalidad,
+    setFiltroModalidad,
+  ] = useState("");
+
+  /*
+    NUEVO ORIGEN
+  */
+
+  const [
+    dialogoOrigen,
+    setDialogoOrigen,
+  ] = useState(false);
+
+  const [
+    tipoNuevoOrigen,
+    setTipoNuevoOrigen,
+  ] = useState(
+    "Trabajo"
+  );
+
+  const [
+    nombreNuevoOrigen,
+    setNombreNuevoOrigen,
   ] = useState("");
 
   const [
-    filtroFrecuencia,
-    setFiltroFrecuencia,
+    guardandoOrigen,
+    setGuardandoOrigen,
+  ] = useState(false);
+
+  /*
+    REGISTRO REAL
+  */
+
+  const [
+    ingresoRegistro,
+    setIngresoRegistro,
+  ] = useState(null);
+
+  const [
+    fechaRegistro,
+    setFechaRegistro,
+  ] = useState(
+    obtenerHoy()
+  );
+
+  const [
+    cantidadUnidades,
+    setCantidadUnidades,
   ] = useState("");
 
-  const cargarIngresos =
+  const [
+    valorUnidadReal,
+    setValorUnidadReal,
+  ] = useState("");
+
+  const [
+    montoReal,
+    setMontoReal,
+  ] = useState("");
+
+  const [
+    registrandoReal,
+    setRegistrandoReal,
+  ] = useState(false);
+
+  const cargarDatos =
     useCallback(async () => {
       try {
         setLoading(true);
 
-        const snapshot =
-          await getDocs(
-            userCollection(
-              user.uid,
-              "ingresos"
-            )
-          );
+        const [
+          ingresosSnapshot,
+          movimientosSnapshot,
+          perfilSnapshot,
+        ] =
+          await Promise.all([
+            getDocs(
+              userCollection(
+                user.uid,
+                "ingresos"
+              )
+            ),
 
-        const lista =
-          snapshot.docs.map(
+            getDocs(
+              userCollection(
+                user.uid,
+                "movimientos"
+              )
+            ),
+
+            getDoc(
+              doc(
+                db,
+                "users",
+                user.uid
+              )
+            ),
+          ]);
+
+        const listaIngresos =
+          ingresosSnapshot.docs.map(
             (documento) => ({
               id: documento.id,
               ...documento.data(),
             })
           );
 
-        setIngresos(lista);
+        const listaMovimientos =
+          movimientosSnapshot.docs.map(
+            (documento) => ({
+              id: documento.id,
+              ...documento.data(),
+            })
+          );
+
+        const datosPerfil =
+          perfilSnapshot.exists()
+            ? perfilSnapshot.data()
+            : {};
+
+        const listaOrigenes =
+          Array.isArray(
+            datosPerfil.origenesIngreso
+          )
+            ? datosPerfil.origenesIngreso
+            : [];
+
+        listaOrigenes.sort(
+          (a, b) =>
+            `${a.tipo}${a.nombre}`.localeCompare(
+              `${b.tipo}${b.nombre}`,
+              "es"
+            )
+        );
+
+        setIngresos(
+          listaIngresos
+        );
+
+        setMovimientos(
+          listaMovimientos
+        );
+
+        setOrigenes(
+          listaOrigenes
+        );
+
         setError("");
       } catch (err) {
         console.error(err);
 
         setError(
-          "No fue posible cargar los ingresos."
+          "No fue posible cargar tus ingresos."
         );
       } finally {
         setLoading(false);
@@ -176,8 +322,22 @@ export default function Ingresos() {
     }, [user.uid]);
 
   useEffect(() => {
-    cargarIngresos();
-  }, [cargarIngresos]);
+    cargarDatos();
+  }, [cargarDatos]);
+
+  const origenSeleccionado =
+    useMemo(
+      () =>
+        origenes.find(
+          (origen) =>
+            origen.id ===
+            formulario.origenId
+        ) || null,
+      [
+        origenes,
+        formulario.origenId,
+      ]
+    );
 
   const manejarCambio = (
     campo,
@@ -198,7 +358,194 @@ export default function Ingresos() {
       );
 
       setEditandoId(null);
+      setError("");
     };
+
+  /*
+    ======================================
+    ORÍGENES
+    ======================================
+  */
+
+  const guardarOrigen =
+    async () => {
+      const nombre =
+        nombreNuevoOrigen.trim();
+
+      if (!nombre) {
+        setError(
+          "Escribe el nombre del origen."
+        );
+
+        return;
+      }
+
+      const duplicado =
+        origenes.some(
+          (origen) =>
+            origen.nombre
+              .trim()
+              .toLowerCase() ===
+              nombre.toLowerCase() &&
+            origen.tipo ===
+              tipoNuevoOrigen
+        );
+
+      if (duplicado) {
+        setError(
+          "Ya existe un origen con ese nombre."
+        );
+
+        return;
+      }
+
+      try {
+        setGuardandoOrigen(
+          true
+        );
+
+        setError("");
+
+        const nuevoOrigen = {
+          id:
+            crearIdOrigen(),
+
+          tipo:
+            tipoNuevoOrigen,
+
+          nombre,
+        };
+
+        const nuevosOrigenes =
+          [
+            ...origenes,
+            nuevoOrigen,
+          ];
+
+        await setDoc(
+          doc(
+            db,
+            "users",
+            user.uid
+          ),
+          {
+            origenesIngreso:
+              nuevosOrigenes,
+
+            perfilActualizado:
+              serverTimestamp(),
+          },
+          {
+            merge: true,
+          }
+        );
+
+        setOrigenes(
+          nuevosOrigenes
+        );
+
+        setFormulario(
+          (anterior) => ({
+            ...anterior,
+
+            origenId:
+              nuevoOrigen.id,
+          })
+        );
+
+        setNombreNuevoOrigen(
+          ""
+        );
+
+        setTipoNuevoOrigen(
+          "Trabajo"
+        );
+
+        setDialogoOrigen(
+          false
+        );
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible crear el origen."
+        );
+      } finally {
+        setGuardandoOrigen(
+          false
+        );
+      }
+    };
+
+  const eliminarOrigen =
+    async (origen) => {
+      const enUso =
+        ingresos.some(
+          (ingreso) =>
+            ingreso.origenId ===
+            origen.id
+        );
+
+      if (enUso) {
+        window.alert(
+          "Este origen está siendo utilizado por una o más fuentes de ingreso. Cambia primero esas fuentes antes de eliminarlo."
+        );
+
+        return;
+      }
+
+      const confirmar =
+        window.confirm(
+          `¿Eliminar "${origen.nombre}"?`
+        );
+
+      if (!confirmar) {
+        return;
+      }
+
+      try {
+        const nuevosOrigenes =
+          origenes.filter(
+            (item) =>
+              item.id !==
+              origen.id
+          );
+
+        await setDoc(
+          doc(
+            db,
+            "users",
+            user.uid
+          ),
+          {
+            origenesIngreso:
+              nuevosOrigenes,
+
+            perfilActualizado:
+              serverTimestamp(),
+          },
+          {
+            merge: true,
+          }
+        );
+
+        setOrigenes(
+          nuevosOrigenes
+        );
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible eliminar el origen."
+        );
+      }
+    };
+
+  /*
+    ======================================
+    FUENTES DE INGRESO
+    ======================================
+  */
 
   const guardarIngreso =
     async (event) => {
@@ -207,10 +554,15 @@ export default function Ingresos() {
       const nombre =
         formulario.nombre.trim();
 
-      const monto =
-        Number(
-          formulario.monto
+      if (
+        !formulario.origenId
+      ) {
+        setError(
+          "Selecciona o crea un origen de ingreso."
         );
+
+        return;
+      }
 
       if (!nombre) {
         setError(
@@ -220,37 +572,137 @@ export default function Ingresos() {
         return;
       }
 
-      if (
-        !monto ||
-        monto <= 0
-      ) {
+      const origen =
+        origenSeleccionado;
+
+      if (!origen) {
         setError(
-          "Ingresa un monto válido."
+          "El origen seleccionado no es válido."
         );
 
         return;
+      }
+
+      if (
+        formulario.modalidad ===
+        "Fijo"
+      ) {
+        const monto =
+          Number(
+            formulario.monto
+          );
+
+        if (
+          !monto ||
+          monto <= 0
+        ) {
+          setError(
+            "Ingresa un monto válido."
+          );
+
+          return;
+        }
+      }
+
+      if (
+        formulario.modalidad ===
+        "Variable por actividad"
+      ) {
+        const valor =
+          Number(
+            formulario.valorUnidad
+          );
+
+        if (
+          !formulario.unidad.trim()
+        ) {
+          setError(
+            "Escribe el nombre de la unidad, por ejemplo Consulta, Venta u Hora."
+          );
+
+          return;
+        }
+
+        if (
+          !valor ||
+          valor <= 0
+        ) {
+          setError(
+            "Ingresa un valor válido por unidad."
+          );
+
+          return;
+        }
       }
 
       try {
         setGuardando(true);
         setError("");
 
-        const datos = {
-          lugar:
-            formulario.lugar,
+        const datosBase = {
+          origenId:
+            origen.id,
+
+          origenTipo:
+            origen.tipo,
+
+          origenNombre:
+            origen.nombre,
 
           fuente:
             formulario.fuente,
 
           nombre,
 
-          monto,
-
-          frecuencia:
-            formulario.frecuencia,
+          modalidad:
+            formulario.modalidad,
 
           updatedAt:
             serverTimestamp(),
+        };
+
+        let datosModalidad =
+          {};
+
+        if (
+          formulario.modalidad ===
+          "Fijo"
+        ) {
+          datosModalidad = {
+            monto:
+              Number(
+                formulario.monto
+              ),
+
+            frecuencia:
+              formulario.frecuencia,
+          };
+        }
+
+        if (
+          formulario.modalidad ===
+          "Variable por actividad"
+        ) {
+          datosModalidad = {
+            unidad:
+              formulario.unidad.trim(),
+
+            valorUnidad:
+              Number(
+                formulario.valorUnidad
+              ),
+
+            unidadesEstimadasSemana:
+              Number(
+                formulario.unidadesEstimadasSemana ||
+                  0
+              ),
+          };
+        }
+
+        const datos = {
+          ...datosBase,
+          ...datosModalidad,
         };
 
         if (editandoId) {
@@ -279,7 +731,7 @@ export default function Ingresos() {
 
         limpiarFormulario();
 
-        await cargarIngresos();
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -295,9 +747,9 @@ export default function Ingresos() {
     ingreso
   ) => {
     setFormulario({
-      lugar:
-        ingreso.lugar ||
-        "Casa",
+      origenId:
+        ingreso.origenId ||
+        "",
 
       fuente:
         ingreso.fuente ||
@@ -307,18 +759,36 @@ export default function Ingresos() {
         ingreso.nombre ||
         "",
 
+      modalidad:
+        ingreso.modalidad ||
+        "Fijo",
+
       monto:
-        ingreso.monto ||
+        ingreso.monto ??
         "",
 
       frecuencia:
         ingreso.frecuencia ||
         "Mensual",
+
+      unidad:
+        ingreso.unidad ||
+        "Consulta",
+
+      valorUnidad:
+        ingreso.valorUnidad ??
+        "",
+
+      unidadesEstimadasSemana:
+        ingreso.unidadesEstimadasSemana ??
+        "",
     });
 
     setEditandoId(
       ingreso.id
     );
+
+    setError("");
 
     window.scrollTo({
       top: 0,
@@ -330,7 +800,7 @@ export default function Ingresos() {
     async (ingreso) => {
       const confirmar =
         window.confirm(
-          `¿Eliminar "${ingreso.nombre}"?`
+          `¿Eliminar "${ingreso.nombre}"? Los movimientos reales ya registrados no serán eliminados.`
         );
 
       if (!confirmar) {
@@ -346,7 +816,7 @@ export default function Ingresos() {
           )
         );
 
-        await cargarIngresos();
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -355,6 +825,262 @@ export default function Ingresos() {
         );
       }
     };
+
+  /*
+    ======================================
+    REGISTRO DE INGRESO REAL
+    ======================================
+  */
+
+  const abrirRegistroReal =
+    (ingreso) => {
+      setIngresoRegistro(
+        ingreso
+      );
+
+      setFechaRegistro(
+        obtenerHoy()
+      );
+
+      setCantidadUnidades(
+        ""
+      );
+
+      setValorUnidadReal(
+        ingreso.valorUnidad ??
+          ""
+      );
+
+      if (
+        (ingreso.modalidad ||
+          "Fijo") ===
+        "Fijo"
+      ) {
+        setMontoReal(
+          ingreso.monto ??
+            ""
+        );
+      } else {
+        setMontoReal("");
+      }
+    };
+
+  const cerrarRegistroReal =
+    () => {
+      if (
+        registrandoReal
+      ) {
+        return;
+      }
+
+      setIngresoRegistro(
+        null
+      );
+
+      setCantidadUnidades(
+        ""
+      );
+
+      setMontoReal("");
+    };
+
+  const totalVariable =
+    useMemo(() => {
+      return (
+        Number(
+          cantidadUnidades ||
+            0
+        ) *
+        Number(
+          valorUnidadReal ||
+            0
+        )
+      );
+    }, [
+      cantidadUnidades,
+      valorUnidadReal,
+    ]);
+
+  const guardarIngresoReal =
+    async () => {
+      if (
+        !ingresoRegistro
+      ) {
+        return;
+      }
+
+      if (!fechaRegistro) {
+        setError(
+          "Selecciona la fecha del ingreso."
+        );
+
+        return;
+      }
+
+      const modalidad =
+        ingresoRegistro.modalidad ||
+        "Fijo";
+
+      let total = 0;
+
+      if (
+        modalidad ===
+        "Variable por actividad"
+      ) {
+        if (
+          Number(
+            cantidadUnidades
+          ) <= 0
+        ) {
+          setError(
+            "Ingresa la cantidad de unidades realizadas."
+          );
+
+          return;
+        }
+
+        if (
+          Number(
+            valorUnidadReal
+          ) <= 0
+        ) {
+          setError(
+            "Ingresa un valor válido por unidad."
+          );
+
+          return;
+        }
+
+        total =
+          totalVariable;
+      } else {
+        total =
+          Number(
+            montoReal
+          );
+
+        if (
+          !total ||
+          total <= 0
+        ) {
+          setError(
+            "Ingresa el monto realmente recibido."
+          );
+
+          return;
+        }
+      }
+
+      try {
+        setRegistrandoReal(
+          true
+        );
+
+        setError("");
+
+        await addDoc(
+          userCollection(
+            user.uid,
+            "movimientos"
+          ),
+          {
+            tipo:
+              "Ingreso",
+
+            fecha:
+              fechaRegistro,
+
+            /*
+              Dejamos lugar temporalmente
+              para mantener compatibilidad
+              con Movimientos actual.
+
+              En la segunda etapa
+              eliminaremos esta dependencia.
+            */
+
+            lugar:
+              ingresoRegistro.origenNombre ||
+              ingresoRegistro.lugar ||
+              "Otros",
+
+            origenId:
+              ingresoRegistro.origenId ||
+              null,
+
+            origenTipo:
+              ingresoRegistro.origenTipo ||
+              "Otro",
+
+            origenNombre:
+              ingresoRegistro.origenNombre ||
+              ingresoRegistro.lugar ||
+              "Otros",
+
+            categoria:
+              ingresoRegistro.fuente ||
+              "Otros",
+
+            concepto:
+              ingresoRegistro.nombre,
+
+            monto:
+              total,
+
+            ingresoId:
+              ingresoRegistro.id,
+
+            modalidadIngreso:
+              modalidad,
+
+            ...(modalidad ===
+            "Variable por actividad"
+              ? {
+                  unidad:
+                    ingresoRegistro.unidad ||
+                    "Unidad",
+
+                  cantidadUnidades:
+                    Number(
+                      cantidadUnidades
+                    ),
+
+                  valorUnidad:
+                    Number(
+                      valorUnidadReal
+                    ),
+                }
+              : {}),
+
+            createdAt:
+              serverTimestamp(),
+
+            updatedAt:
+              serverTimestamp(),
+          }
+        );
+
+        cerrarRegistroReal();
+
+        await cargarDatos();
+      } catch (err) {
+        console.error(err);
+
+        setError(
+          "No fue posible registrar el ingreso real."
+        );
+      } finally {
+        setRegistrandoReal(
+          false
+        );
+      }
+    };
+
+  /*
+    ======================================
+    FILTROS Y RESUMEN
+    ======================================
+  */
 
   const ingresosFiltrados =
     useMemo(() => {
@@ -365,97 +1091,112 @@ export default function Ingresos() {
 
       return ingresos.filter(
         (ingreso) => {
-          const fuente =
-            ingreso.fuente ||
-            "Sin clasificar";
+          const origen =
+            ingreso.origenNombre ||
+            ingreso.lugar ||
+            "";
 
           const nombre =
             ingreso.nombre ||
             "";
 
-          const coincideBusqueda =
+          const fuente =
+            ingreso.fuente ||
+            "";
+
+          const coincideTexto =
             !texto ||
             nombre
+              .toLowerCase()
+              .includes(texto) ||
+            origen
               .toLowerCase()
               .includes(texto) ||
             fuente
               .toLowerCase()
               .includes(texto);
 
-          const coincideLugar =
-            !filtroLugar ||
-            ingreso.lugar ===
-              filtroLugar;
+          const coincideOrigen =
+            !filtroOrigen ||
+            ingreso.origenId ===
+              filtroOrigen;
 
-          const coincideFuente =
-            !filtroFuente ||
-            fuente ===
-              filtroFuente;
+          const modalidad =
+            ingreso.modalidad ||
+            "Fijo";
 
-          const coincideFrecuencia =
-            !filtroFrecuencia ||
-            ingreso.frecuencia ===
-              filtroFrecuencia;
+          const coincideModalidad =
+            !filtroModalidad ||
+            modalidad ===
+              filtroModalidad;
 
           return (
-            coincideBusqueda &&
-            coincideLugar &&
-            coincideFuente &&
-            coincideFrecuencia
+            coincideTexto &&
+            coincideOrigen &&
+            coincideModalidad
           );
         }
       );
     }, [
       ingresos,
       busqueda,
-      filtroLugar,
-      filtroFuente,
-      filtroFrecuencia,
+      filtroOrigen,
+      filtroModalidad,
     ]);
 
   const resumen =
     useMemo(() => {
-      const resultado = {
-        total: 0,
-        Casa: 0,
-        Consultorio: 0,
-        Extras: 0,
-      };
+      let semanal = 0;
+      let mensual = 0;
+      let fijos = 0;
+      let variables = 0;
+      let irregulares = 0;
 
-      ingresosFiltrados.forEach(
+      ingresos.forEach(
         (ingreso) => {
-          const semanal =
-            calcularSemanal(
-              ingreso.monto,
-              ingreso.frecuencia
+          semanal +=
+            calcularProyeccionSemanalIngreso(
+              ingreso,
+              movimientos
             );
 
-          resultado.total +=
-            semanal;
+          mensual +=
+            calcularProyeccionMensualIngreso(
+              ingreso,
+              movimientos
+            );
+
+          const modalidad =
+            ingreso.modalidad ||
+            "Fijo";
 
           if (
-            Object.prototype.hasOwnProperty.call(
-              resultado,
-              ingreso.lugar
-            )
+            modalidad ===
+            "Fijo"
           ) {
-            resultado[
-              ingreso.lugar
-            ] += semanal;
+            fijos += 1;
+          } else if (
+            modalidad ===
+            "Variable por actividad"
+          ) {
+            variables += 1;
+          } else {
+            irregulares += 1;
           }
         }
       );
 
-      return resultado;
-    }, [ingresosFiltrados]);
-
-  const limpiarFiltros =
-    () => {
-      setBusqueda("");
-      setFiltroLugar("");
-      setFiltroFuente("");
-      setFiltroFrecuencia("");
-    };
+      return {
+        semanal,
+        mensual,
+        fijos,
+        variables,
+        irregulares,
+      };
+    }, [
+      ingresos,
+      movimientos,
+    ]);
 
   if (loading) {
     return (
@@ -480,32 +1221,35 @@ export default function Ingresos() {
           sm: 3,
           lg: 4,
         },
+
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          sx={{
-            fontSize: {
-              xs: 29,
-              md: 34,
-            },
-            fontWeight: 800,
-          }}
-        >
-          Ingresos
-        </Typography>
+      <Typography
+        sx={{
+          fontSize: {
+            xs: 29,
+            md: 34,
+          },
 
-        <Typography
-          color="text.secondary"
-          sx={{ mt: 0.5 }}
-        >
-          Registra de dónde entra tu
-          dinero y cuánto representa
-          realmente cada semana.
-        </Typography>
-      </Box>
+          fontWeight: 800,
+        }}
+      >
+        Ingresos
+      </Typography>
+
+      <Typography
+        color="text.secondary"
+        sx={{
+          mt: 0.5,
+          mb: 3,
+        }}
+      >
+        Define de dónde viene tu
+        dinero y registra lo que
+        realmente recibes.
+      </Typography>
 
       {error && (
         <Alert
@@ -519,24 +1263,69 @@ export default function Ingresos() {
         </Alert>
       )}
 
+      {/* RESUMEN */}
+
+      <Box
+        sx={{
+          display: "grid",
+
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
+
+          gap: 2,
+          mb: 3,
+        }}
+      >
+        <Resumen
+          titulo="Proyección semanal"
+          valor={formatearDinero(
+            resumen.semanal
+          )}
+          icono="📅"
+        />
+
+        <Resumen
+          titulo="Proyección mensual"
+          valor={formatearDinero(
+            resumen.mensual
+          )}
+          icono="📈"
+        />
+
+        <Resumen
+          titulo="Ingresos fijos"
+          valor={
+            resumen.fijos
+          }
+          icono="💼"
+          dinero={false}
+        />
+
+        <Resumen
+          titulo="Variables / irregulares"
+          valor={
+            resumen.variables +
+            resumen.irregulares
+          }
+          icono="🔄"
+          dinero={false}
+        />
+      </Box>
+
+      {/* ORÍGENES */}
+
       <Card
         sx={{
           borderRadius: "24px",
           mb: 3,
-          border:
-            editandoId
-              ? "1px solid #CDEFE3"
-              : "1px solid rgba(0,0,0,.03)",
         }}
       >
-        <CardContent
-          sx={{
-            p: {
-              xs: 2.5,
-              md: 3,
-            },
-          }}
-        >
+        <CardContent sx={{ p: 3 }}>
           <Box
             sx={{
               display: "flex",
@@ -544,117 +1333,181 @@ export default function Ingresos() {
                 "space-between",
               alignItems: "center",
               flexWrap: "wrap",
-              gap: 1,
-              mb: 2.5,
+              gap: 2,
             }}
           >
             <Box>
               <Typography
-                fontWeight={800}
-                fontSize={19}
+                fontWeight={900}
+                fontSize={20}
               >
-                {editandoId
-                  ? "Editar ingreso"
-                  : "Nuevo ingreso"}
+                Tus orígenes de ingreso
               </Typography>
 
-              {editandoId && (
-                <Typography
-                  color="text.secondary"
-                  fontSize={13}
-                >
-                  Estás modificando un
-                  registro existente.
-                </Typography>
-              )}
+              <Typography
+                color="text.secondary"
+                fontSize={13}
+                sx={{ mt: 0.5 }}
+              >
+                Puedes tener varios
+                trabajos, negocios,
+                rentas u otras fuentes.
+              </Typography>
             </Box>
 
-            {editandoId && (
-              <Chip
-                label="Modo edición"
-                color="success"
-                size="small"
-              />
-            )}
+            <Button
+              variant="outlined"
+              onClick={() =>
+                setDialogoOrigen(
+                  true
+                )
+              }
+            >
+              + Agregar origen
+            </Button>
           </Box>
+
+          {origenes.length >
+          0 ? (
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 1.2,
+                mt: 3,
+              }}
+            >
+              {origenes.map(
+                (origen) => (
+                  <Chip
+                    key={
+                      origen.id
+                    }
+                    label={`${iconoOrigen(
+                      origen.tipo
+                    )} ${
+                      origen.tipo
+                    } · ${
+                      origen.nombre
+                    }`}
+                    onDelete={() =>
+                      eliminarOrigen(
+                        origen
+                      )
+                    }
+                    sx={{
+                      px: 0.7,
+                    }}
+                  />
+                )
+              )}
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                mt: 3,
+                p: 3,
+                textAlign: "center",
+                backgroundColor:
+                  "#F7F6FF",
+                borderRadius: "18px",
+              }}
+            >
+              <Typography
+                fontWeight={800}
+              >
+                Primero crea de dónde
+                proviene tu dinero
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={13}
+                sx={{ mt: 0.5 }}
+              >
+                Por ejemplo: Trabajo ·
+                Empresa ABC, Negocio ·
+                Consultorio o Renta ·
+                Departamento Centro.
+              </Typography>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* NUEVA FUENTE */}
+
+      <Card
+        sx={{
+          borderRadius: "24px",
+          mb: 3,
+        }}
+      >
+        <CardContent sx={{ p: 3 }}>
+          <Typography
+            fontWeight={900}
+            fontSize={20}
+          >
+            {editandoId
+              ? "Editar fuente de ingreso"
+              : "Nueva fuente de ingreso"}
+          </Typography>
 
           <Box
             component="form"
             onSubmit={
               guardarIngreso
             }
+            sx={{
+              mt: 3,
+            }}
           >
             <Box
               sx={{
                 display: "grid",
+
                 gridTemplateColumns: {
                   xs: "1fr",
-                  sm:
+                  md:
                     "repeat(2, 1fr)",
-                  lg:
-                    "repeat(5, 1fr)",
+                  xl:
+                    "repeat(3, 1fr)",
                 },
+
                 gap: 2,
               }}
             >
               <FormControl fullWidth>
                 <InputLabel>
-                  Lugar
+                  Origen
                 </InputLabel>
 
                 <Select
+                  label="Origen"
                   value={
-                    formulario.lugar
+                    formulario.origenId
                   }
-                  label="Lugar"
                   onChange={(
                     event
                   ) =>
                     manejarCambio(
-                      "lugar",
+                      "origenId",
                       event.target.value
                     )
                   }
                 >
-                  {lugares.map(
-                    (lugar) => (
+                  {origenes.map(
+                    (origen) => (
                       <MenuItem
-                        key={lugar}
-                        value={lugar}
+                        key={
+                          origen.id
+                        }
+                        value={
+                          origen.id
+                        }
                       >
-                        {lugar}
-                      </MenuItem>
-                    )
-                  )}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth>
-                <InputLabel>
-                  Fuente
-                </InputLabel>
-
-                <Select
-                  value={
-                    formulario.fuente
-                  }
-                  label="Fuente"
-                  onChange={(
-                    event
-                  ) =>
-                    manejarCambio(
-                      "fuente",
-                      event.target.value
-                    )
-                  }
-                >
-                  {fuentes.map(
-                    (fuente) => (
-                      <MenuItem
-                        key={fuente}
-                        value={fuente}
-                      >
-                        {fuente}
+                        {origen.tipo} ·{" "}
+                        {origen.nombre}
                       </MenuItem>
                     )
                   )}
@@ -675,82 +1528,229 @@ export default function Ingresos() {
                   )
                 }
                 placeholder="Ej. Consultas"
-                fullWidth
-              />
-
-              <TextField
-                label="Monto"
-                type="number"
-                value={
-                  formulario.monto
-                }
-                onChange={(
-                  event
-                ) =>
-                  manejarCambio(
-                    "monto",
-                    event.target.value
-                  )
-                }
-                inputProps={{
-                  min: 0,
-                  step: "0.01",
-                }}
-                fullWidth
               />
 
               <FormControl fullWidth>
                 <InputLabel>
-                  Frecuencia
+                  Fuente
                 </InputLabel>
 
                 <Select
+                  label="Fuente"
                   value={
-                    formulario.frecuencia
+                    formulario.fuente
                   }
-                  label="Frecuencia"
                   onChange={(
                     event
                   ) =>
                     manejarCambio(
-                      "frecuencia",
+                      "fuente",
                       event.target.value
                     )
                   }
                 >
-                  {frecuencias.map(
-                    (frecuencia) => (
+                  {FUENTES_INGRESO.map(
+                    (fuente) => (
                       <MenuItem
-                        key={frecuencia}
-                        value={frecuencia}
+                        key={fuente}
+                        value={fuente}
                       >
-                        {frecuencia}
+                        {fuente}
                       </MenuItem>
                     )
                   )}
                 </Select>
               </FormControl>
+
+              <FormControl fullWidth>
+                <InputLabel>
+                  Tipo de ingreso
+                </InputLabel>
+
+                <Select
+                  label="Tipo de ingreso"
+                  value={
+                    formulario.modalidad
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    manejarCambio(
+                      "modalidad",
+                      event.target.value
+                    )
+                  }
+                >
+                  {MODALIDADES_INGRESO.map(
+                    (modalidad) => (
+                      <MenuItem
+                        key={
+                          modalidad
+                        }
+                        value={
+                          modalidad
+                        }
+                      >
+                        {modalidad}
+                      </MenuItem>
+                    )
+                  )}
+                </Select>
+              </FormControl>
+
+              {formulario.modalidad ===
+                "Fijo" && (
+                <>
+                  <TextField
+                    label="Monto"
+                    type="number"
+                    value={
+                      formulario.monto
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      manejarCambio(
+                        "monto",
+                        event.target.value
+                      )
+                    }
+                  />
+
+                  <FormControl fullWidth>
+                    <InputLabel>
+                      Frecuencia
+                    </InputLabel>
+
+                    <Select
+                      label="Frecuencia"
+                      value={
+                        formulario.frecuencia
+                      }
+                      onChange={(
+                        event
+                      ) =>
+                        manejarCambio(
+                          "frecuencia",
+                          event.target.value
+                        )
+                      }
+                    >
+                      {frecuencias.map(
+                        (
+                          frecuencia
+                        ) => (
+                          <MenuItem
+                            key={
+                              frecuencia
+                            }
+                            value={
+                              frecuencia
+                            }
+                          >
+                            {
+                              frecuencia
+                            }
+                          </MenuItem>
+                        )
+                      )}
+                    </Select>
+                  </FormControl>
+                </>
+              )}
+
+              {formulario.modalidad ===
+                "Variable por actividad" && (
+                <>
+                  <TextField
+                    label="Nombre de la unidad"
+                    value={
+                      formulario.unidad
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      manejarCambio(
+                        "unidad",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Consulta, venta, hora..."
+                  />
+
+                  <TextField
+                    label="Valor por unidad"
+                    type="number"
+                    value={
+                      formulario.valorUnidad
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      manejarCambio(
+                        "valorUnidad",
+                        event.target.value
+                      )
+                    }
+                  />
+
+                  <TextField
+                    label="Estimación semanal inicial"
+                    type="number"
+                    value={
+                      formulario.unidadesEstimadasSemana
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      manejarCambio(
+                        "unidadesEstimadasSemana",
+                        event.target.value
+                      )
+                    }
+                    helperText="Opcional. LUMA reemplazará esta estimación por tu promedio real cuando exista historial."
+                  />
+                </>
+              )}
             </Box>
+
+            {formulario.modalidad ===
+              "Irregular" && (
+              <Alert
+                severity="info"
+                sx={{
+                  mt: 2,
+                  borderRadius: "16px",
+                }}
+              >
+                No necesitamos inventar
+                un monto recurrente. LUMA
+                construirá una referencia
+                a partir de tus ingresos
+                reales registrados.
+              </Alert>
+            )}
 
             <Box
               sx={{
                 display: "flex",
                 gap: 1.5,
-                mt: 2.5,
                 flexWrap: "wrap",
+                mt: 3,
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
-                color="success"
-                disabled={guardando}
+                disabled={
+                  guardando
+                }
               >
                 {guardando
                   ? "Guardando..."
                   : editandoId
                     ? "Guardar cambios"
-                    : "Agregar ingreso"}
+                    : "Crear fuente"}
               </Button>
 
               {editandoId && (
@@ -768,524 +1768,150 @@ export default function Ingresos() {
         </CardContent>
       </Card>
 
+      {/* FILTROS */}
+
       <Box
         sx={{
           display: "grid",
           gridTemplateColumns: {
             xs: "1fr",
-            sm:
-              "repeat(2, 1fr)",
-            lg:
-              "repeat(4, 1fr)",
+            md:
+              "2fr 1fr 1fr",
           },
-          gap: 2,
+          gap: 1.5,
           mb: 3,
         }}
       >
-        <MiniResumen
-          titulo="Ingreso semanal"
-          valor={resumen.total}
-          icono="💰"
-          color="#10B981"
-        />
-
-        <MiniResumen
-          titulo="Casa"
-          valor={resumen.Casa}
-          icono="🏠"
-        />
-
-        <MiniResumen
-          titulo="Consultorio"
-          valor={
-            resumen.Consultorio
+        <TextField
+          label="Buscar"
+          value={busqueda}
+          onChange={(
+            event
+          ) =>
+            setBusqueda(
+              event.target.value
+            )
           }
-          icono="🩺"
+          placeholder="Consulta, sueldo, negocio..."
         />
 
-        <MiniResumen
-          titulo="Extras"
-          valor={resumen.Extras}
-          icono="⭐"
-        />
+        <FormControl>
+          <InputLabel>
+            Origen
+          </InputLabel>
+
+          <Select
+            label="Origen"
+            value={
+              filtroOrigen
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroOrigen(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todos
+            </MenuItem>
+
+            {origenes.map(
+              (origen) => (
+                <MenuItem
+                  key={
+                    origen.id
+                  }
+                  value={
+                    origen.id
+                  }
+                >
+                  {origen.tipo} ·{" "}
+                  {origen.nombre}
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
+
+        <FormControl>
+          <InputLabel>
+            Modalidad
+          </InputLabel>
+
+          <Select
+            label="Modalidad"
+            value={
+              filtroModalidad
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroModalidad(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todas
+            </MenuItem>
+
+            {MODALIDADES_INGRESO.map(
+              (modalidad) => (
+                <MenuItem
+                  key={
+                    modalidad
+                  }
+                  value={
+                    modalidad
+                  }
+                >
+                  {modalidad}
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
       </Box>
 
-      <Card
-        sx={{
-          borderRadius: "24px",
-          mb: 3,
-        }}
-      >
-        <CardContent sx={{ p: 2.5 }}>
-          <Typography
-            fontWeight={800}
-            sx={{ mb: 2 }}
-          >
-            Buscar y filtrar
-          </Typography>
-
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                md:
-                  "2fr repeat(3, 1fr)",
-              },
-              gap: 1.5,
-            }}
-          >
-            <TextField
-              label="Buscar ingreso"
-              placeholder="Ej. consultas, sueldo..."
-              value={busqueda}
-              onChange={(
-                event
-              ) =>
-                setBusqueda(
-                  event.target.value
-                )
-              }
-            />
-
-            <FormControl>
-              <InputLabel>
-                Lugar
-              </InputLabel>
-
-              <Select
-                label="Lugar"
-                value={
-                  filtroLugar
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroLugar(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todos
-                </MenuItem>
-
-                {lugares.map(
-                  (lugar) => (
-                    <MenuItem
-                      key={lugar}
-                      value={lugar}
-                    >
-                      {lugar}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Fuente
-              </InputLabel>
-
-              <Select
-                label="Fuente"
-                value={
-                  filtroFuente
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroFuente(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todas
-                </MenuItem>
-
-                <MenuItem value="Sin clasificar">
-                  Sin clasificar
-                </MenuItem>
-
-                {fuentes.map(
-                  (fuente) => (
-                    <MenuItem
-                      key={fuente}
-                      value={fuente}
-                    >
-                      {fuente}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Frecuencia
-              </InputLabel>
-
-              <Select
-                label="Frecuencia"
-                value={
-                  filtroFrecuencia
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroFrecuencia(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todas
-                </MenuItem>
-
-                {frecuencias.map(
-                  (frecuencia) => (
-                    <MenuItem
-                      key={frecuencia}
-                      value={frecuencia}
-                    >
-                      {frecuencia}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-          </Box>
-
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 1,
-              mt: 2,
-            }}
-          >
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              {
-                ingresosFiltrados.length
-              }{" "}
-              {ingresosFiltrados.length ===
-              1
-                ? "ingreso encontrado"
-                : "ingresos encontrados"}
-            </Typography>
-
-            <Button
-              size="small"
-              onClick={
-                limpiarFiltros
-              }
-            >
-              Limpiar filtros
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-
-      <Card
-        sx={{
-          display: {
-            xs: "none",
-            md: "block",
-          },
-          borderRadius: "24px",
-          overflow: "hidden",
-        }}
-      >
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>
-                  Nombre
-                </TableCell>
-
-                <TableCell>
-                  Fuente
-                </TableCell>
-
-                <TableCell>
-                  Lugar
-                </TableCell>
-
-                <TableCell>
-                  Monto
-                </TableCell>
-
-                <TableCell>
-                  Frecuencia
-                </TableCell>
-
-                <TableCell>
-                  Semanal
-                </TableCell>
-
-                <TableCell align="right">
-                  Acciones
-                </TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
-              {ingresosFiltrados.map(
-                (ingreso) => (
-                  <TableRow
-                    key={ingreso.id}
-                    hover
-                  >
-                    <TableCell>
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {ingreso.nombre}
-                      </Typography>
-                    </TableCell>
-
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={
-                          ingreso.fuente ||
-                          "Sin clasificar"
-                        }
-                      />
-                    </TableCell>
-
-                    <TableCell>
-                      {ingreso.lugar}
-                    </TableCell>
-
-                    <TableCell>
-                      {formatearDinero(
-                        ingreso.monto
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {ingreso.frecuencia}
-                    </TableCell>
-
-                    <TableCell>
-                      <Typography
-                        fontWeight={700}
-                        color="success.main"
-                      >
-                        {formatearDinero(
-                          calcularSemanal(
-                            ingreso.monto,
-                            ingreso.frecuencia
-                          )
-                        )}
-                      </Typography>
-                    </TableCell>
-
-                    <TableCell
-                      align="right"
-                    >
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          editarIngreso(
-                            ingreso
-                          )
-                        }
-                      >
-                        Editar
-                      </Button>
-
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() =>
-                          eliminarIngreso(
-                            ingreso
-                          )
-                        }
-                      >
-                        Eliminar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              )}
-
-              {ingresosFiltrados.length ===
-                0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    align="center"
-                    sx={{ py: 6 }}
-                  >
-                    <Typography
-                      color="text.secondary"
-                    >
-                      No encontramos
-                      ingresos con esos
-                      filtros.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
+      {/* FUENTES */}
 
       <Box
         sx={{
-          display: {
-            xs: "grid",
-            md: "none",
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            xl:
+              "repeat(2, 1fr)",
           },
-          gap: 1.5,
+          gap: 2,
         }}
       >
         {ingresosFiltrados.map(
           (ingreso) => (
-            <Card
+            <IngresoCard
               key={ingreso.id}
-              sx={{
-                borderRadius: "20px",
-              }}
-            >
-              <CardContent>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    alignItems:
-                      "flex-start",
-                    gap: 2,
-                  }}
-                >
-                  <Box>
-                    <Typography
-                      fontWeight={800}
-                    >
-                      {ingreso.nombre}
-                    </Typography>
-
-                    <Typography
-                      color="text.secondary"
-                      fontSize={13}
-                    >
-                      {ingreso.lugar} ·{" "}
-                      {ingreso.fuente ||
-                        "Sin clasificar"}
-                    </Typography>
-                  </Box>
-
-                  <Typography
-                    sx={{
-                      fontWeight: 900,
-                      color: "#10B981",
-                    }}
-                  >
-                    {formatearDinero(
-                      ingreso.monto
-                    )}
-                  </Typography>
-                </Box>
-
-                <Box
-                  sx={{
-                    display: "flex",
-                    gap: 1,
-                    mt: 2,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Chip
-                    size="small"
-                    label={
-                      ingreso.frecuencia
-                    }
-                  />
-
-                  <Chip
-                    size="small"
-                    label={
-                      ingreso.fuente ||
-                      "Sin clasificar"
-                    }
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    mt: 2,
-                    pt: 2,
-                    borderTop:
-                      "1px solid #EEEFF3",
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    alignItems: "center",
-                    gap: 1,
-                  }}
-                >
-                  <Box>
-                    <Typography
-                      color="text.secondary"
-                      fontSize={11}
-                    >
-                      Equivalente semanal
-                    </Typography>
-
-                    <Typography
-                      fontWeight={800}
-                      color="success.main"
-                    >
-                      {formatearDinero(
-                        calcularSemanal(
-                          ingreso.monto,
-                          ingreso.frecuencia
-                        )
-                      )}
-                    </Typography>
-                  </Box>
-
-                  <Box>
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        editarIngreso(
-                          ingreso
-                        )
-                      }
-                    >
-                      Editar
-                    </Button>
-
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() =>
-                        eliminarIngreso(
-                          ingreso
-                        )
-                      }
-                    >
-                      Eliminar
-                    </Button>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
+              ingreso={ingreso}
+              movimientos={
+                movimientos
+              }
+              onEditar={() =>
+                editarIngreso(
+                  ingreso
+                )
+              }
+              onEliminar={() =>
+                eliminarIngreso(
+                  ingreso
+                )
+              }
+              onRegistrar={() =>
+                abrirRegistroReal(
+                  ingreso
+                )
+              }
+            />
           )
         )}
 
@@ -1293,40 +1919,655 @@ export default function Ingresos() {
           0 && (
           <Card
             sx={{
-              borderRadius: "20px",
+              borderRadius: "24px",
+              gridColumn: "1 / -1",
             }}
           >
             <CardContent
               sx={{
-                py: 5,
+                py: 6,
                 textAlign: "center",
               }}
             >
               <Typography
-                fontSize={28}
+                fontSize={32}
               >
-                🔎
+                💰
               </Typography>
 
               <Typography
-                fontWeight={800}
+                fontWeight={900}
+                fontSize={19}
                 sx={{ mt: 1 }}
               >
-                Sin resultados
+                No hay fuentes de ingreso
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={13}
+                sx={{ mt: 0.5 }}
+              >
+                Crea tu primer origen y
+                después agrega una fuente
+                de ingreso.
               </Typography>
             </CardContent>
           </Card>
         )}
       </Box>
+
+      {/* DIALOG ORIGEN */}
+
+      <Dialog
+        open={dialogoOrigen}
+        onClose={() =>
+          setDialogoOrigen(
+            false
+          )
+        }
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          Agregar origen
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography
+            color="text.secondary"
+            fontSize={13}
+            sx={{ mb: 3 }}
+          >
+            Un origen identifica de
+            dónde proviene el dinero.
+          </Typography>
+
+          <FormControl
+            fullWidth
+            sx={{ mb: 2 }}
+          >
+            <InputLabel>
+              Tipo
+            </InputLabel>
+
+            <Select
+              label="Tipo"
+              value={
+                tipoNuevoOrigen
+              }
+              onChange={(
+                event
+              ) =>
+                setTipoNuevoOrigen(
+                  event.target.value
+                )
+              }
+            >
+              {TIPOS_ORIGEN.map(
+                (tipo) => (
+                  <MenuItem
+                    key={tipo}
+                    value={tipo}
+                  >
+                    {iconoOrigen(
+                      tipo
+                    )}{" "}
+                    {tipo}
+                  </MenuItem>
+                )
+              )}
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            label={
+              etiquetaOrigen(
+                tipoNuevoOrigen
+              )
+            }
+            value={
+              nombreNuevoOrigen
+            }
+            onChange={(
+              event
+            ) =>
+              setNombreNuevoOrigen(
+                event.target.value
+              )
+            }
+            placeholder={
+              ejemploOrigen(
+                tipoNuevoOrigen
+              )
+            }
+          />
+        </DialogContent>
+
+        <DialogActions
+          sx={{ p: 3 }}
+        >
+          <Button
+            onClick={() =>
+              setDialogoOrigen(
+                false
+              )
+            }
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={
+              guardarOrigen
+            }
+            disabled={
+              guardandoOrigen
+            }
+          >
+            {guardandoOrigen
+              ? "Guardando..."
+              : "Agregar"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* DIALOG REGISTRO REAL */}
+
+      <Dialog
+        open={
+          Boolean(
+            ingresoRegistro
+          )
+        }
+        onClose={
+          cerrarRegistroReal
+        }
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          Registrar ingreso real
+        </DialogTitle>
+
+        {ingresoRegistro && (
+          <>
+            <DialogContent>
+              <Box
+                sx={{
+                  p: 2,
+                  backgroundColor:
+                    "#F7F6FF",
+                  borderRadius: "16px",
+                  mb: 3,
+                }}
+              >
+                <Typography
+                  fontWeight={900}
+                >
+                  {
+                    ingresoRegistro.nombre
+                  }
+                </Typography>
+
+                <Typography
+                  color="text.secondary"
+                  fontSize={13}
+                >
+                  {ingresoRegistro.origenNombre ||
+                    ingresoRegistro.lugar ||
+                    "Origen anterior"}
+                  {" · "}
+                  {ingresoRegistro.modalidad ||
+                    "Fijo"}
+                </Typography>
+              </Box>
+
+              <TextField
+                fullWidth
+                label="Fecha"
+                type="date"
+                value={
+                  fechaRegistro
+                }
+                onChange={(
+                  event
+                ) =>
+                  setFechaRegistro(
+                    event.target.value
+                  )
+                }
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{ mb: 2 }}
+              />
+
+              {(ingresoRegistro.modalidad ||
+                "Fijo") ===
+              "Variable por actividad" ? (
+                <>
+                  <TextField
+                    fullWidth
+                    label={`Cantidad de ${
+                      ingresoRegistro.unidad ||
+                      "unidades"
+                    }`}
+                    type="number"
+                    value={
+                      cantidadUnidades
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setCantidadUnidades(
+                        event.target.value
+                      )
+                    }
+                    sx={{ mb: 2 }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    label={`Valor por ${
+                      ingresoRegistro.unidad ||
+                      "unidad"
+                    }`}
+                    type="number"
+                    value={
+                      valorUnidadReal
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setValorUnidadReal(
+                        event.target.value
+                      )
+                    }
+                  />
+
+                  <Box
+                    sx={{
+                      mt: 3,
+                      p: 2.5,
+                      borderRadius: "18px",
+                      backgroundColor:
+                        "#ECFDF5",
+                    }}
+                  >
+                    <Typography
+                      color="text.secondary"
+                      fontSize={12}
+                    >
+                      INGRESO GENERADO
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 900,
+                        fontSize: 28,
+                        color: "#10B981",
+                      }}
+                    >
+                      {formatearDinero(
+                        totalVariable
+                      )}
+                    </Typography>
+
+                    <Typography
+                      color="text.secondary"
+                      fontSize={12}
+                    >
+                      {Number(
+                        cantidadUnidades ||
+                          0
+                      )}{" "}
+                      ×{" "}
+                      {formatearDinero(
+                        Number(
+                          valorUnidadReal ||
+                            0
+                        )
+                      )}
+                    </Typography>
+                  </Box>
+                </>
+              ) : (
+                <TextField
+                  fullWidth
+                  label="Monto realmente recibido"
+                  type="number"
+                  value={
+                    montoReal
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMontoReal(
+                      event.target.value
+                    )
+                  }
+                />
+              )}
+
+              <Alert
+                severity="info"
+                sx={{
+                  mt: 3,
+                  borderRadius: "16px",
+                }}
+              >
+                Este registro se
+                guardará automáticamente
+                como un movimiento real.
+                No tendrás que capturarlo
+                nuevamente.
+              </Alert>
+            </DialogContent>
+
+            <DialogActions
+              sx={{ p: 3 }}
+            >
+              <Button
+                onClick={
+                  cerrarRegistroReal
+                }
+                disabled={
+                  registrandoReal
+                }
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                variant="contained"
+                onClick={
+                  guardarIngresoReal
+                }
+                disabled={
+                  registrandoReal
+                }
+              >
+                {registrandoReal
+                  ? "Registrando..."
+                  : "Registrar ingreso"}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }
 
-function MiniResumen({
+function IngresoCard({
+  ingreso,
+  movimientos,
+  onEditar,
+  onEliminar,
+  onRegistrar,
+}) {
+  const modalidad =
+    ingreso.modalidad ||
+    "Fijo";
+
+  const semanal =
+    calcularProyeccionSemanalIngreso(
+      ingreso,
+      movimientos
+    );
+
+  const mensual =
+    calcularProyeccionMensualIngreso(
+      ingreso,
+      movimientos
+    );
+
+  const promedioReal =
+    calcularPromedioSemanalReal(
+      ingreso.id,
+      movimientos
+    );
+
+  const legacy =
+    !ingreso.origenId;
+
+  return (
+    <Card
+      sx={{
+        borderRadius: "24px",
+        border:
+          legacy
+            ? "1px solid #F59E0B"
+            : "1px solid rgba(0,0,0,.03)",
+      }}
+    >
+      <CardContent sx={{ p: 3 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "flex-start",
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography
+              fontWeight={900}
+              fontSize={20}
+            >
+              {ingreso.nombre}
+            </Typography>
+
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+              sx={{ mt: 0.3 }}
+            >
+              {ingreso.origenTipo ||
+                "Origen anterior"}
+              {" · "}
+              {ingreso.origenNombre ||
+                ingreso.lugar ||
+                "Sin origen"}
+            </Typography>
+          </Box>
+
+          <Typography
+            sx={{
+              fontSize: 26,
+            }}
+          >
+            {iconoOrigen(
+              ingreso.origenTipo
+            )}
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            flexWrap: "wrap",
+            mt: 2,
+          }}
+        >
+          <Chip
+            size="small"
+            label={modalidad}
+            color={
+              modalidad ===
+              "Fijo"
+                ? "success"
+                : modalidad ===
+                    "Variable por actividad"
+                  ? "primary"
+                  : "warning"
+            }
+            variant="outlined"
+          />
+
+          <Chip
+            size="small"
+            label={
+              ingreso.fuente ||
+              "Sin clasificar"
+            }
+          />
+
+          {legacy && (
+            <Chip
+              size="small"
+              label="Actualizar origen"
+              color="warning"
+            />
+          )}
+        </Box>
+
+        {modalidad ===
+          "Variable por actividad" && (
+          <Box
+            sx={{
+              mt: 2.5,
+              p: 2,
+              borderRadius: "16px",
+              backgroundColor:
+                "#F7F6FF",
+            }}
+          >
+            <Typography
+              fontWeight={800}
+            >
+              {formatearDinero(
+                ingreso.valorUnidad ||
+                  0
+              )}{" "}
+              por{" "}
+              {ingreso.unidad ||
+                "unidad"}
+            </Typography>
+
+            {Number(
+              ingreso.unidadesEstimadasSemana ||
+                0
+            ) > 0 &&
+              promedioReal ===
+                0 && (
+                <Typography
+                  color="text.secondary"
+                  fontSize={12}
+                >
+                  Estimación inicial:{" "}
+                  {
+                    ingreso.unidadesEstimadasSemana
+                  }{" "}
+                  por semana
+                </Typography>
+              )}
+          </Box>
+        )}
+
+        <Divider
+          sx={{ my: 2.5 }}
+        />
+
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(2, 1fr)",
+            gap: 2,
+          }}
+        >
+          <Dato
+            titulo={
+              promedioReal > 0
+                ? "Promedio real semanal"
+                : "Proyección semanal"
+            }
+            valor={formatearDinero(
+              semanal
+            )}
+          />
+
+          <Dato
+            titulo="Proyección mensual"
+            valor={formatearDinero(
+              mensual
+            )}
+          />
+        </Box>
+
+        {promedioReal >
+          0 && (
+          <Typography
+            color="text.secondary"
+            fontSize={11}
+            sx={{ mt: 1 }}
+          >
+            La proyección utiliza el
+            promedio registrado durante
+            las últimas 8 semanas.
+          </Typography>
+        )}
+
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            mt: 3,
+          }}
+        >
+          <Button
+            variant="contained"
+            size="small"
+            onClick={
+              onRegistrar
+            }
+          >
+            + Registrar ingreso real
+          </Button>
+
+          <Button
+            size="small"
+            onClick={onEditar}
+          >
+            Editar
+          </Button>
+
+          <Button
+            size="small"
+            color="error"
+            onClick={
+              onEliminar
+            }
+          >
+            Eliminar
+          </Button>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Resumen({
   titulo,
   valor,
   icono,
-  color,
+  dinero = true,
 }) {
   return (
     <Card
@@ -1335,54 +2576,125 @@ function MiniResumen({
       }}
     >
       <CardContent>
-        <Box
+        <Typography
+          sx={{ fontSize: 23 }}
+        >
+          {icono}
+        </Typography>
+
+        <Typography
+          color="text.secondary"
+          fontSize={13}
+          sx={{ mt: 1 }}
+        >
+          {titulo}
+        </Typography>
+
+        <Typography
           sx={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems: "center",
+            mt: 0.5,
+            fontSize: 22,
+            fontWeight: 900,
           }}
         >
-          <Box>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              {titulo}
-            </Typography>
+          {valor}
+        </Typography>
 
-            <Typography
-              sx={{
-                mt: 0.5,
-                fontSize: 22,
-                fontWeight: 900,
-                color:
-                  color ||
-                  "text.primary",
-              }}
-            >
-              {formatearDinero(
-                valor
-              )}
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={11}
-            >
-              equivalente semanal
-            </Typography>
-          </Box>
-
+        {!dinero && (
           <Typography
-            sx={{
-              fontSize: 24,
-            }}
+            color="text.secondary"
+            fontSize={11}
           >
-            {icono}
+            fuentes configuradas
           </Typography>
-        </Box>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+function Dato({
+  titulo,
+  valor,
+}) {
+  return (
+    <Box>
+      <Typography
+        color="text.secondary"
+        fontSize={12}
+      >
+        {titulo}
+      </Typography>
+
+      <Typography
+        fontWeight={900}
+        fontSize={18}
+      >
+        {valor}
+      </Typography>
+    </Box>
+  );
+}
+
+function iconoOrigen(
+  tipo
+) {
+  switch (tipo) {
+    case "Trabajo":
+      return "💼";
+
+    case "Negocio":
+      return "🏪";
+
+    case "Renta":
+      return "🏠";
+
+    case "Inversión":
+      return "📈";
+
+    default:
+      return "➕";
+  }
+}
+
+function etiquetaOrigen(
+  tipo
+) {
+  switch (tipo) {
+    case "Trabajo":
+      return "Trabajo / empresa";
+
+    case "Negocio":
+      return "Nombre del negocio";
+
+    case "Renta":
+      return "Propiedad / renta";
+
+    case "Inversión":
+      return "Nombre de la inversión";
+
+    default:
+      return "Nombre del origen";
+  }
+}
+
+function ejemploOrigen(
+  tipo
+) {
+  switch (tipo) {
+    case "Trabajo":
+      return "Ej. Empresa ABC";
+
+    case "Negocio":
+      return "Ej. Consultorio";
+
+    case "Renta":
+      return "Ej. Departamento Centro";
+
+    case "Inversión":
+      return "Ej. Portafolio principal";
+
+    default:
+      return "Ej. Otros ingresos";
+  }
 }

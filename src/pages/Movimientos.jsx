@@ -8,6 +8,8 @@ import {
 import {
   addDoc,
   deleteDoc,
+  doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   updateDoc,
@@ -25,15 +27,13 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
+
+import {
+  db,
+} from "../services/firebase";
 
 import {
   useAuth,
@@ -48,23 +48,15 @@ import {
   formatearDinero,
 } from "../utils/frecuencia";
 
-const lugares = [
-  "Casa",
-  "Consultorio",
-  "Extras",
-];
+import {
+  FUENTES_INGRESO,
+  obtenerHoy,
+} from "../utils/ingresos";
 
-const categoriasIngreso = [
-  "Sueldo",
-  "Consultas / Servicios",
-  "Ventas",
-  "Honorarios",
-  "Comisiones",
-  "Rentas",
-  "Inversiones",
-  "Transferencias / Apoyo",
-  "Otros ingresos",
-];
+import {
+  construirEspacios,
+  obtenerNombreEspacio,
+} from "../utils/espacios";
 
 const categoriasEgreso = [
   "Vivienda",
@@ -73,7 +65,8 @@ const categoriasEgreso = [
   "Transporte",
   "Salud",
   "Educación",
-  "Consultorio / Negocio",
+  "Negocio",
+  "Personal",
   "Suscripciones",
   "Impuestos",
   "Ocio",
@@ -81,27 +74,32 @@ const categoriasEgreso = [
   "Mascotas",
   "Seguros",
   "Deudas",
-  "Otros gastos",
+  "Mantenimiento",
+  "Insumos",
+  "Publicidad",
+  "Nómina",
+  "Otros",
 ];
 
-const obtenerHoy = () => {
-  const fecha = new Date();
+const formularioInicial =
+  () => ({
+    tipo: "Egreso",
 
-  const year =
-    fecha.getFullYear();
+    fecha:
+      obtenerHoy(),
 
-  const month =
-    String(
-      fecha.getMonth() + 1
-    ).padStart(2, "0");
+    origenId: "",
 
-  const day =
-    String(
-      fecha.getDate()
-    ).padStart(2, "0");
+    espacioId:
+      "personal",
 
-  return `${year}-${month}-${day}`;
-};
+    categoria:
+      "Alimentación",
+
+    concepto: "",
+
+    monto: "",
+  });
 
 const formatearFecha = (
   fecha
@@ -110,11 +108,6 @@ const formatearFecha = (
     return "-";
   }
 
-  const valor =
-    new Date(
-      `${fecha}T12:00:00`
-    );
-
   return new Intl.DateTimeFormat(
     "es-MX",
     {
@@ -122,19 +115,12 @@ const formatearFecha = (
       month: "short",
       year: "numeric",
     }
-  ).format(valor);
+  ).format(
+    new Date(
+      `${fecha}T12:00:00`
+    )
+  );
 };
-
-const crearFormularioInicial =
-  () => ({
-    tipo: "Egreso",
-    fecha: obtenerHoy(),
-    lugar: "Casa",
-    categoria:
-      "Alimentación",
-    concepto: "",
-    monto: "",
-  });
 
 export default function Movimientos() {
   const {
@@ -147,10 +133,15 @@ export default function Movimientos() {
   ] = useState([]);
 
   const [
+    origenes,
+    setOrigenes,
+  ] = useState([]);
+
+  const [
     formulario,
     setFormulario,
   ] = useState(
-    crearFormularioInicial()
+    formularioInicial()
   );
 
   const [
@@ -183,41 +174,34 @@ export default function Movimientos() {
     setFiltroTipo,
   ] = useState("");
 
-  const [
-    filtroLugar,
-    setFiltroLugar,
-  ] = useState("");
-
-  const [
-    filtroCategoria,
-    setFiltroCategoria,
-  ] = useState("");
-
-  const [
-    fechaDesde,
-    setFechaDesde,
-  ] = useState("");
-
-  const [
-    fechaHasta,
-    setFechaHasta,
-  ] = useState("");
-
-  const cargarMovimientos =
+  const cargarDatos =
     useCallback(async () => {
       try {
         setLoading(true);
 
-        const snapshot =
-          await getDocs(
-            userCollection(
-              user.uid,
-              "movimientos"
-            )
-          );
+        const [
+          movimientosSnapshot,
+          perfilSnapshot,
+        ] =
+          await Promise.all([
+            getDocs(
+              userCollection(
+                user.uid,
+                "movimientos"
+              )
+            ),
+
+            getDoc(
+              doc(
+                db,
+                "users",
+                user.uid
+              )
+            ),
+          ]);
 
         const lista =
-          snapshot.docs.map(
+          movimientosSnapshot.docs.map(
             (documento) => ({
               id: documento.id,
               ...documento.data(),
@@ -233,7 +217,23 @@ export default function Movimientos() {
             )
         );
 
-        setMovimientos(lista);
+        const perfil =
+          perfilSnapshot.exists()
+            ? perfilSnapshot.data()
+            : {};
+
+        setMovimientos(
+          lista
+        );
+
+        setOrigenes(
+          Array.isArray(
+            perfil.origenesIngreso
+          )
+            ? perfil.origenesIngreso
+            : []
+        );
+
         setError("");
       } catch (err) {
         console.error(err);
@@ -247,71 +247,78 @@ export default function Movimientos() {
     }, [user.uid]);
 
   useEffect(() => {
-    cargarMovimientos();
-  }, [cargarMovimientos]);
+    cargarDatos();
+  }, [cargarDatos]);
 
-  const categoriasFormulario =
-    formulario.tipo ===
-    "Ingreso"
-      ? categoriasIngreso
-      : categoriasEgreso;
+  const espacios =
+    useMemo(
+      () =>
+        construirEspacios(
+          origenes
+        ),
+      [origenes]
+    );
 
-  const manejarCambio = (
-    campo,
-    valor
+  const origenSeleccionado =
+    useMemo(
+      () =>
+        origenes.find(
+          (origen) =>
+            origen.id ===
+            formulario.origenId
+        ) || null,
+      [
+        origenes,
+        formulario.origenId,
+      ]
+    );
+
+  const espacioSeleccionado =
+    useMemo(
+      () =>
+        espacios.find(
+          (espacio) =>
+            espacio.id ===
+            formulario.espacioId
+        ) || null,
+      [
+        espacios,
+        formulario.espacioId,
+      ]
+    );
+
+  const manejarTipo = (
+    tipo
   ) => {
-    if (
-      campo === "tipo"
-    ) {
-      const nuevasCategorias =
-        valor === "Ingreso"
-          ? categoriasIngreso
-          : categoriasEgreso;
-
-      setFormulario(
-        (anterior) => ({
-          ...anterior,
-          tipo: valor,
-          categoria:
-            nuevasCategorias[0],
-        })
-      );
-
-      return;
-    }
-
     setFormulario(
       (anterior) => ({
         ...anterior,
-        [campo]: valor,
+
+        tipo,
+
+        categoria:
+          tipo ===
+          "Ingreso"
+            ? FUENTES_INGRESO[0]
+            : categoriasEgreso[0],
       })
     );
   };
 
-  const limpiarFormulario =
-    () => {
-      setFormulario(
-        crearFormularioInicial()
-      );
-
-      setEditandoId(null);
-    };
-
   const guardarMovimiento =
     async (event) => {
       event.preventDefault();
-
-      const concepto =
-        formulario.concepto.trim();
 
       const monto =
         Number(
           formulario.monto
         );
 
-      if (!concepto) {
+      if (
+        !formulario.concepto.trim()
+      ) {
         setError(
-          "Escribe el concepto del movimiento."
+          "Escribe el concepto."
         );
 
         return;
@@ -329,10 +336,24 @@ export default function Movimientos() {
       }
 
       if (
-        !formulario.fecha
+        formulario.tipo ===
+          "Ingreso" &&
+        !origenSeleccionado
       ) {
         setError(
-          "Selecciona la fecha del movimiento."
+          "Selecciona el origen del ingreso."
+        );
+
+        return;
+      }
+
+      if (
+        formulario.tipo ===
+          "Egreso" &&
+        !espacioSeleccionado
+      ) {
+        setError(
+          "Selecciona el espacio del gasto."
         );
 
         return;
@@ -342,26 +363,72 @@ export default function Movimientos() {
         setGuardando(true);
         setError("");
 
-        const datos = {
-          tipo:
-            formulario.tipo,
+        let datos;
 
-          fecha:
-            formulario.fecha,
+        if (
+          formulario.tipo ===
+          "Ingreso"
+        ) {
+          datos = {
+            tipo: "Ingreso",
 
-          lugar:
-            formulario.lugar,
+            fecha:
+              formulario.fecha,
 
-          categoria:
-            formulario.categoria,
+            categoria:
+              formulario.categoria,
 
-          concepto,
+            concepto:
+              formulario.concepto.trim(),
 
-          monto,
+            monto,
 
-          updatedAt:
-            serverTimestamp(),
-        };
+            origenId:
+              origenSeleccionado.id,
+
+            origenTipo:
+              origenSeleccionado.tipo,
+
+            origenNombre:
+              origenSeleccionado.nombre,
+
+            lugar:
+              origenSeleccionado.nombre,
+
+            updatedAt:
+              serverTimestamp(),
+          };
+        } else {
+          datos = {
+            tipo: "Egreso",
+
+            fecha:
+              formulario.fecha,
+
+            categoria:
+              formulario.categoria,
+
+            concepto:
+              formulario.concepto.trim(),
+
+            monto,
+
+            espacioId:
+              espacioSeleccionado.id,
+
+            espacioTipo:
+              espacioSeleccionado.tipo,
+
+            espacioNombre:
+              espacioSeleccionado.nombre,
+
+            lugar:
+              espacioSeleccionado.nombre,
+
+            updatedAt:
+              serverTimestamp(),
+          };
+        }
 
         if (editandoId) {
           await updateDoc(
@@ -387,9 +454,13 @@ export default function Movimientos() {
           );
         }
 
-        limpiarFormulario();
+        setFormulario(
+          formularioInicial()
+        );
 
-        await cargarMovimientos();
+        setEditandoId(null);
+
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -403,11 +474,38 @@ export default function Movimientos() {
 
   const editarMovimiento =
     (movimiento) => {
-      const categoriaFallback =
+      let espacioId =
+        movimiento.espacioId ||
+        "";
+
+      if (
         movimiento.tipo ===
-        "Ingreso"
-          ? categoriasIngreso[0]
-          : categoriasEgreso[0];
+          "Egreso" &&
+        !espacioId &&
+        movimiento.lugar ===
+          "Casa"
+      ) {
+        espacioId =
+          "personal";
+      }
+
+      if (
+        movimiento.tipo ===
+          "Egreso" &&
+        !espacioId
+      ) {
+        const coincidencia =
+          espacios.find(
+            (espacio) =>
+              espacio.nombre ===
+              movimiento.lugar
+          );
+
+        if (coincidencia) {
+          espacioId =
+            coincidencia.id;
+        }
+      }
 
       setFormulario({
         tipo:
@@ -418,20 +516,22 @@ export default function Movimientos() {
           movimiento.fecha ||
           obtenerHoy(),
 
-        lugar:
-          movimiento.lugar ||
-          "Casa",
+        origenId:
+          movimiento.origenId ||
+          "",
+
+        espacioId,
 
         categoria:
           movimiento.categoria ||
-          categoriaFallback,
+          "Otros",
 
         concepto:
           movimiento.concepto ||
           "",
 
         monto:
-          movimiento.monto ||
+          movimiento.monto ??
           "",
       });
 
@@ -447,12 +547,11 @@ export default function Movimientos() {
 
   const eliminarMovimiento =
     async (movimiento) => {
-      const confirmar =
-        window.confirm(
+      if (
+        !window.confirm(
           `¿Eliminar "${movimiento.concepto}"?`
-        );
-
-      if (!confirmar) {
+        )
+      ) {
         return;
       }
 
@@ -465,7 +564,7 @@ export default function Movimientos() {
           )
         );
 
-        await cargarMovimientos();
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -474,16 +573,6 @@ export default function Movimientos() {
         );
       }
     };
-
-  const todasCategorias =
-    useMemo(() => {
-      return [
-        ...new Set([
-          ...categoriasIngreso,
-          ...categoriasEgreso,
-        ]),
-      ];
-    }, []);
 
   const movimientosFiltrados =
     useMemo(() => {
@@ -494,20 +583,31 @@ export default function Movimientos() {
 
       return movimientos.filter(
         (movimiento) => {
-          const concepto =
-            movimiento.concepto ||
-            "";
+          const ubicacion =
+            movimiento.tipo ===
+            "Ingreso"
+              ? movimiento.origenNombre ||
+                movimiento.lugar ||
+                ""
+              : obtenerNombreEspacio(
+                  movimiento
+                );
 
-          const categoria =
-            movimiento.categoria ||
-            "";
-
-          const coincideBusqueda =
+          const coincideTexto =
             !texto ||
-            concepto
+            (
+              movimiento.concepto ||
+              ""
+            )
               .toLowerCase()
               .includes(texto) ||
-            categoria
+            (
+              movimiento.categoria ||
+              ""
+            )
+              .toLowerCase()
+              .includes(texto) ||
+            ubicacion
               .toLowerCase()
               .includes(texto);
 
@@ -516,33 +616,9 @@ export default function Movimientos() {
             movimiento.tipo ===
               filtroTipo;
 
-          const coincideLugar =
-            !filtroLugar ||
-            movimiento.lugar ===
-              filtroLugar;
-
-          const coincideCategoria =
-            !filtroCategoria ||
-            movimiento.categoria ===
-              filtroCategoria;
-
-          const coincideDesde =
-            !fechaDesde ||
-            movimiento.fecha >=
-              fechaDesde;
-
-          const coincideHasta =
-            !fechaHasta ||
-            movimiento.fecha <=
-              fechaHasta;
-
           return (
-            coincideBusqueda &&
-            coincideTipo &&
-            coincideLugar &&
-            coincideCategoria &&
-            coincideDesde &&
-            coincideHasta
+            coincideTexto &&
+            coincideTipo
           );
         }
       );
@@ -550,10 +626,6 @@ export default function Movimientos() {
       movimientos,
       busqueda,
       filtroTipo,
-      filtroLugar,
-      filtroCategoria,
-      fechaDesde,
-      fechaHasta,
     ]);
 
   const resumen =
@@ -563,19 +635,21 @@ export default function Movimientos() {
 
       movimientosFiltrados.forEach(
         (movimiento) => {
-          const monto =
-            Number(
-              movimiento.monto ||
-                0
-            );
-
           if (
             movimiento.tipo ===
             "Ingreso"
           ) {
-            ingresos += monto;
+            ingresos +=
+              Number(
+                movimiento.monto ||
+                  0
+              );
           } else {
-            egresos += monto;
+            egresos +=
+              Number(
+                movimiento.monto ||
+                  0
+              );
           }
         }
       );
@@ -584,32 +658,26 @@ export default function Movimientos() {
         ingresos,
         egresos,
         balance:
-          ingresos - egresos,
-        cantidad:
-          movimientosFiltrados.length,
+          ingresos -
+          egresos,
       };
     }, [
       movimientosFiltrados,
     ]);
 
-  const limpiarFiltros =
-    () => {
-      setBusqueda("");
-      setFiltroTipo("");
-      setFiltroLugar("");
-      setFiltroCategoria("");
-      setFechaDesde("");
-      setFechaHasta("");
-    };
+  const categoriasFormulario =
+    formulario.tipo ===
+    "Ingreso"
+      ? FUENTES_INGRESO
+      : categoriasEgreso;
 
   if (loading) {
     return (
       <Box
         sx={{
           minHeight: "70vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          display: "grid",
+          placeItems: "center",
         }}
       >
         <CircularProgress />
@@ -625,39 +693,39 @@ export default function Movimientos() {
           sm: 3,
           lg: 4,
         },
+
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          sx={{
-            fontSize: {
-              xs: 29,
-              md: 34,
-            },
-            fontWeight: 800,
-          }}
-        >
-          Movimientos
-        </Typography>
+      <Typography
+        sx={{
+          fontSize: {
+            xs: 29,
+            md: 34,
+          },
 
-        <Typography
-          color="text.secondary"
-          sx={{ mt: 0.5 }}
-        >
-          Registra el dinero que
-          realmente entró y salió.
-        </Typography>
-      </Box>
+          fontWeight: 900,
+        }}
+      >
+        Movimientos
+      </Typography>
+
+      <Typography
+        color="text.secondary"
+        sx={{
+          mt: 0.5,
+          mb: 3,
+        }}
+      >
+        Registra lo que realmente
+        entra y sale de cada espacio.
+      </Typography>
 
       {error && (
         <Alert
           severity="error"
-          sx={{
-            mb: 3,
-            borderRadius: "16px",
-          }}
+          sx={{ mb: 3 }}
         >
           {error}
         </Alert>
@@ -666,35 +734,38 @@ export default function Movimientos() {
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
-            sm:
-              "repeat(2, 1fr)",
-            lg:
-              "repeat(4, 1fr)",
+            md:
+              "repeat(3, 1fr)",
           },
+
           gap: 2,
           mb: 3,
         }}
       >
-        <ResumenCard
+        <Resumen
           titulo="Ingresos reales"
-          valor={resumen.ingresos}
-          icono="💰"
+          valor={
+            resumen.ingresos
+          }
           color="#10B981"
         />
 
-        <ResumenCard
+        <Resumen
           titulo="Egresos reales"
-          valor={resumen.egresos}
-          icono="🧾"
+          valor={
+            resumen.egresos
+          }
           color="#EF4444"
         />
 
-        <ResumenCard
+        <Resumen
           titulo="Balance"
-          valor={resumen.balance}
-          icono="⚖️"
+          valor={
+            resumen.balance
+          }
           color={
             resumen.balance >=
             0
@@ -702,38 +773,6 @@ export default function Movimientos() {
               : "#EF4444"
           }
         />
-
-        <Card
-          sx={{
-            borderRadius: "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              sx={{ fontSize: 24 }}
-            >
-              🔄
-            </Typography>
-
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-              sx={{ mt: 1 }}
-            >
-              Movimientos
-            </Typography>
-
-            <Typography
-              sx={{
-                mt: 0.5,
-                fontSize: 22,
-                fontWeight: 900,
-              }}
-            >
-              {resumen.cantidad}
-            </Typography>
-          </CardContent>
-        </Card>
       </Box>
 
       <Card
@@ -742,18 +781,10 @@ export default function Movimientos() {
           mb: 3,
         }}
       >
-        <CardContent
-          sx={{
-            p: {
-              xs: 2.5,
-              md: 3,
-            },
-          }}
-        >
+        <CardContent sx={{ p: 3 }}>
           <Typography
-            fontWeight={800}
-            fontSize={19}
-            sx={{ mb: 2.5 }}
+            fontWeight={900}
+            fontSize={20}
           >
             {editandoId
               ? "Editar movimiento"
@@ -765,182 +796,253 @@ export default function Movimientos() {
             onSubmit={
               guardarMovimiento
             }
+            sx={{
+              display: "grid",
+
+              gridTemplateColumns: {
+                xs: "1fr",
+                md:
+                  "repeat(2, 1fr)",
+                xl:
+                  "repeat(3, 1fr)",
+              },
+
+              gap: 2,
+              mt: 3,
+            }}
           >
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: {
-                  xs: "1fr",
-                  sm:
-                    "repeat(2, 1fr)",
-                  lg:
-                    "repeat(3, 1fr)",
-                },
-                gap: 2,
-              }}
-            >
-              <FormControl fullWidth>
-                <InputLabel>
-                  Tipo
-                </InputLabel>
+            <FormControl>
+              <InputLabel>
+                Tipo
+              </InputLabel>
 
-                <Select
-                  value={
-                    formulario.tipo
-                  }
-                  label="Tipo"
-                  onChange={(
-                    event
-                  ) =>
-                    manejarCambio(
-                      "tipo",
-                      event.target.value
-                    )
-                  }
-                >
-                  <MenuItem value="Ingreso">
-                    Ingreso
-                  </MenuItem>
-
-                  <MenuItem value="Egreso">
-                    Egreso
-                  </MenuItem>
-                </Select>
-              </FormControl>
-
-              <TextField
-                label="Fecha"
-                type="date"
+              <Select
                 value={
-                  formulario.fecha
+                  formulario.tipo
                 }
+                label="Tipo"
                 onChange={(
                   event
                 ) =>
-                  manejarCambio(
-                    "fecha",
+                  manejarTipo(
                     event.target.value
                   )
                 }
-                InputLabelProps={{
-                  shrink: true,
-                }}
-              />
+              >
+                <MenuItem value="Ingreso">
+                  Ingreso
+                </MenuItem>
 
-              <FormControl fullWidth>
+                <MenuItem value="Egreso">
+                  Egreso
+                </MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Fecha"
+              type="date"
+              value={
+                formulario.fecha
+              }
+              onChange={(
+                event
+              ) =>
+                setFormulario(
+                  (anterior) => ({
+                    ...anterior,
+                    fecha:
+                      event.target.value,
+                  })
+                )
+              }
+              InputLabelProps={{
+                shrink: true,
+              }}
+            />
+
+            {formulario.tipo ===
+            "Ingreso" ? (
+              <FormControl>
+                <InputLabel>
+                  Origen
+                </InputLabel>
+
+                <Select
+                  label="Origen"
+                  value={
+                    formulario.origenId
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setFormulario(
+                      (anterior) => ({
+                        ...anterior,
+
+                        origenId:
+                          event.target.value,
+                      })
+                    )
+                  }
+                >
+                  {origenes.map(
+                    (origen) => (
+                      <MenuItem
+                        key={
+                          origen.id
+                        }
+                        value={
+                          origen.id
+                        }
+                      >
+                        {origen.tipo} ·{" "}
+                        {origen.nombre}
+                      </MenuItem>
+                    )
+                  )}
+                </Select>
+              </FormControl>
+            ) : (
+              <FormControl>
                 <InputLabel>
                   Espacio
                 </InputLabel>
 
                 <Select
-                  value={
-                    formulario.lugar
-                  }
                   label="Espacio"
-                  onChange={(
-                    event
-                  ) =>
-                    manejarCambio(
-                      "lugar",
-                      event.target.value
-                    )
-                  }
-                >
-                  {lugares.map(
-                    (lugar) => (
-                      <MenuItem
-                        key={lugar}
-                        value={lugar}
-                      >
-                        {lugar}
-                      </MenuItem>
-                    )
-                  )}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth>
-                <InputLabel>
-                  Categoría
-                </InputLabel>
-
-                <Select
                   value={
-                    formulario.categoria
+                    formulario.espacioId
                   }
-                  label="Categoría"
                   onChange={(
                     event
                   ) =>
-                    manejarCambio(
-                      "categoria",
-                      event.target.value
+                    setFormulario(
+                      (anterior) => ({
+                        ...anterior,
+
+                        espacioId:
+                          event.target.value,
+                      })
                     )
                   }
                 >
-                  {categoriasFormulario.map(
-                    (categoria) => (
+                  {espacios.map(
+                    (espacio) => (
                       <MenuItem
-                        key={categoria}
-                        value={categoria}
+                        key={
+                          espacio.id
+                        }
+                        value={
+                          espacio.id
+                        }
                       >
-                        {categoria}
+                        {espacio.tipo} ·{" "}
+                        {espacio.nombre}
                       </MenuItem>
                     )
                   )}
                 </Select>
               </FormControl>
+            )}
 
-              <TextField
-                label="Concepto"
+            <FormControl>
+              <InputLabel>
+                Categoría
+              </InputLabel>
+
+              <Select
+                label="Categoría"
                 value={
-                  formulario.concepto
+                  formulario.categoria
                 }
                 onChange={(
                   event
                 ) =>
-                  manejarCambio(
-                    "concepto",
-                    event.target.value
-                  )
-                }
-                fullWidth
-              />
+                  setFormulario(
+                    (anterior) => ({
+                      ...anterior,
 
-              <TextField
-                label="Monto"
-                type="number"
-                value={
-                  formulario.monto
-                }
-                onChange={(
-                  event
-                ) =>
-                  manejarCambio(
-                    "monto",
-                    event.target.value
+                      categoria:
+                        event.target.value,
+                    })
                   )
                 }
-                inputProps={{
-                  min: 0,
-                  step: "0.01",
-                }}
-                fullWidth
-              />
-            </Box>
+              >
+                {categoriasFormulario.map(
+                  (categoria) => (
+                    <MenuItem
+                      key={
+                        categoria
+                      }
+                      value={
+                        categoria
+                      }
+                    >
+                      {categoria}
+                    </MenuItem>
+                  )
+                )}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Concepto"
+              value={
+                formulario.concepto
+              }
+              onChange={(
+                event
+              ) =>
+                setFormulario(
+                  (anterior) => ({
+                    ...anterior,
+
+                    concepto:
+                      event.target.value,
+                  })
+                )
+              }
+            />
+
+            <TextField
+              label="Monto"
+              type="number"
+              value={
+                formulario.monto
+              }
+              onChange={(
+                event
+              ) =>
+                setFormulario(
+                  (anterior) => ({
+                    ...anterior,
+
+                    monto:
+                      event.target.value,
+                  })
+                )
+              }
+            />
 
             <Box
               sx={{
+                gridColumn: {
+                  xs: "auto",
+                  xl:
+                    "1 / -1",
+                },
+
                 display: "flex",
                 gap: 1.5,
-                mt: 2.5,
-                flexWrap: "wrap",
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
-                disabled={guardando}
+                disabled={
+                  guardando
+                }
               >
                 {guardando
                   ? "Guardando..."
@@ -951,10 +1053,15 @@ export default function Movimientos() {
 
               {editandoId && (
                 <Button
-                  variant="outlined"
-                  onClick={
-                    limpiarFormulario
-                  }
+                  onClick={() => {
+                    setFormulario(
+                      formularioInicial()
+                    );
+
+                    setEditandoId(
+                      null
+                    );
+                  }}
                 >
                   Cancelar
                 </Button>
@@ -964,475 +1071,233 @@ export default function Movimientos() {
         </CardContent>
       </Card>
 
-      <Card
+      <Box
         sx={{
-          borderRadius: "24px",
+          display: "flex",
+          gap: 1.5,
+          flexWrap: "wrap",
           mb: 3,
         }}
       >
-        <CardContent sx={{ p: 2.5 }}>
-          <Typography
-            fontWeight={800}
-            sx={{ mb: 2 }}
-          >
-            Buscar y filtrar
-          </Typography>
+        <TextField
+          label="Buscar"
+          value={busqueda}
+          onChange={(
+            event
+          ) =>
+            setBusqueda(
+              event.target.value
+            )
+          }
+          sx={{
+            flex: 1,
+            minWidth: 240,
+          }}
+        />
 
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                sm:
-                  "repeat(2, 1fr)",
-                lg:
-                  "2fr repeat(5, 1fr)",
-              },
-              gap: 1.5,
-            }}
-          >
-            <TextField
-              label="Buscar movimiento"
-              value={busqueda}
-              onChange={(
-                event
-              ) =>
-                setBusqueda(
-                  event.target.value
-                )
-              }
-            />
+        <FormControl
+          sx={{
+            minWidth: 180,
+          }}
+        >
+          <InputLabel>
+            Tipo
+          </InputLabel>
 
-            <FormControl>
-              <InputLabel>
-                Tipo
-              </InputLabel>
-
-              <Select
-                label="Tipo"
-                value={
-                  filtroTipo
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroTipo(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todos
-                </MenuItem>
-
-                <MenuItem value="Ingreso">
-                  Ingresos
-                </MenuItem>
-
-                <MenuItem value="Egreso">
-                  Egresos
-                </MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Espacio
-              </InputLabel>
-
-              <Select
-                label="Espacio"
-                value={
-                  filtroLugar
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroLugar(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todos
-                </MenuItem>
-
-                {lugares.map(
-                  (lugar) => (
-                    <MenuItem
-                      key={lugar}
-                      value={lugar}
-                    >
-                      {lugar}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Categoría
-              </InputLabel>
-
-              <Select
-                label="Categoría"
-                value={
-                  filtroCategoria
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroCategoria(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todas
-                </MenuItem>
-
-                {todasCategorias.map(
-                  (categoria) => (
-                    <MenuItem
-                      key={categoria}
-                      value={categoria}
-                    >
-                      {categoria}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Desde"
-              type="date"
-              value={fechaDesde}
-              onChange={(
-                event
-              ) =>
-                setFechaDesde(
-                  event.target.value
-                )
-              }
-              InputLabelProps={{
-                shrink: true,
-              }}
-            />
-
-            <TextField
-              label="Hasta"
-              type="date"
-              value={fechaHasta}
-              onChange={(
-                event
-              ) =>
-                setFechaHasta(
-                  event.target.value
-                )
-              }
-              InputLabelProps={{
-                shrink: true,
-              }}
-            />
-          </Box>
-
-          <Button
-            size="small"
-            onClick={
-              limpiarFiltros
+          <Select
+            label="Tipo"
+            value={
+              filtroTipo
             }
-            sx={{ mt: 2 }}
+            onChange={(
+              event
+            ) =>
+              setFiltroTipo(
+                event.target.value
+              )
+            }
           >
-            Limpiar filtros
-          </Button>
-        </CardContent>
-      </Card>
+            <MenuItem value="">
+              Todos
+            </MenuItem>
 
-      <Card
+            <MenuItem value="Ingreso">
+              Ingreso
+            </MenuItem>
+
+            <MenuItem value="Egreso">
+              Egreso
+            </MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
+      <Box
         sx={{
-          display: {
-            xs: "none",
-            md: "block",
-          },
-          borderRadius: "24px",
-          overflow: "hidden",
+          display: "grid",
+          gap: 1.5,
         }}
       >
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>
-                  Fecha
-                </TableCell>
-                <TableCell>
-                  Concepto
-                </TableCell>
-                <TableCell>
-                  Tipo
-                </TableCell>
-                <TableCell>
-                  Categoría
-                </TableCell>
-                <TableCell>
-                  Espacio
-                </TableCell>
-                <TableCell>
-                  Monto
-                </TableCell>
-                <TableCell align="right">
-                  Acciones
-                </TableCell>
-              </TableRow>
-            </TableHead>
+        {movimientosFiltrados.map(
+          (movimiento) => {
+            const ubicacion =
+              movimiento.tipo ===
+              "Ingreso"
+                ? movimiento.origenNombre ||
+                  movimiento.lugar ||
+                  "Sin origen"
+                : obtenerNombreEspacio(
+                    movimiento
+                  );
 
-            <TableBody>
-              {movimientosFiltrados.map(
-                (movimiento) => (
-                  <TableRow
-                    key={
-                      movimiento.id
-                    }
-                    hover
+            return (
+              <Card
+                key={
+                  movimiento.id
+                }
+                sx={{
+                  borderRadius:
+                    "20px",
+                }}
+              >
+                <CardContent>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      gap: 2,
+                    }}
                   >
-                    <TableCell>
-                      {formatearFecha(
-                        movimiento.fecha
-                      )}
-                    </TableCell>
-
-                    <TableCell>
+                    <Box>
                       <Typography
-                        fontWeight={700}
+                        fontWeight={900}
                       >
                         {
                           movimiento.concepto
                         }
                       </Typography>
-                    </TableCell>
 
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={
-                          movimiento.tipo
-                        }
-                        color={
+                      <Typography
+                        color="text.secondary"
+                        fontSize={12}
+                      >
+                        {formatearFecha(
+                          movimiento.fecha
+                        )}
+                        {" · "}
+                        {ubicacion}
+                      </Typography>
+                    </Box>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 900,
+                        fontSize: 18,
+
+                        color:
                           movimiento.tipo ===
                           "Ingreso"
-                            ? "success"
-                            : "error"
-                        }
-                        variant="outlined"
-                      />
-                    </TableCell>
-
-                    <TableCell>
-                      {
-                        movimiento.categoria
-                      }
-                    </TableCell>
-
-                    <TableCell>
-                      {movimiento.lugar}
-                    </TableCell>
-
-                    <TableCell>
-                      <Typography
-                        sx={{
-                          fontWeight: 800,
-                          color:
-                            movimiento.tipo ===
-                            "Ingreso"
-                              ? "#10B981"
-                              : "#EF4444",
-                        }}
-                      >
-                        {movimiento.tipo ===
-                        "Ingreso"
-                          ? "+"
-                          : "-"}
-                        {formatearDinero(
-                          movimiento.monto
-                        )}
-                      </Typography>
-                    </TableCell>
-
-                    <TableCell
-                      align="right"
+                            ? "#10B981"
+                            : "#EF4444",
+                      }}
                     >
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          editarMovimiento(
-                            movimiento
-                          )
-                        }
-                      >
-                        Editar
-                      </Button>
+                      {movimiento.tipo ===
+                      "Ingreso"
+                        ? "+"
+                        : "-"}
 
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() =>
-                          eliminarMovimiento(
-                            movimiento
-                          )
-                        }
-                      >
-                        Eliminar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
-
-      <Box
-        sx={{
-          display: {
-            xs: "grid",
-            md: "none",
-          },
-          gap: 1.5,
-        }}
-      >
-        {movimientosFiltrados.map(
-          (movimiento) => (
-            <Card
-              key={movimiento.id}
-              sx={{
-                borderRadius: "20px",
-              }}
-            >
-              <CardContent>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    gap: 2,
-                  }}
-                >
-                  <Box>
-                    <Typography
-                      fontWeight={800}
-                    >
-                      {
-                        movimiento.concepto
-                      }
-                    </Typography>
-
-                    <Typography
-                      color="text.secondary"
-                      fontSize={13}
-                    >
-                      {formatearFecha(
-                        movimiento.fecha
+                      {formatearDinero(
+                        movimiento.monto
                       )}
                     </Typography>
                   </Box>
 
-                  <Typography
+                  <Box
                     sx={{
-                      fontWeight: 900,
-                      color:
-                        movimiento.tipo ===
-                        "Ingreso"
-                          ? "#10B981"
-                          : "#EF4444",
+                      display: "flex",
+                      gap: 1,
+                      mt: 2,
+                      flexWrap: "wrap",
                     }}
                   >
-                    {movimiento.tipo ===
-                    "Ingreso"
-                      ? "+"
-                      : "-"}
-                    {formatearDinero(
-                      movimiento.monto
-                    )}
-                  </Typography>
-                </Box>
+                    <Chip
+                      size="small"
+                      label={
+                        movimiento.tipo
+                      }
+                    />
 
-                <Box
-                  sx={{
-                    display: "flex",
-                    gap: 1,
-                    mt: 2,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Chip
-                    size="small"
-                    label={
-                      movimiento.tipo
-                    }
-                  />
+                    <Chip
+                      size="small"
+                      label={
+                        movimiento.categoria
+                      }
+                    />
+                  </Box>
 
-                  <Chip
-                    size="small"
-                    label={
-                      movimiento.lugar
-                    }
-                  />
+                  {movimiento.cantidadUnidades && (
+                    <Typography
+                      color="text.secondary"
+                      fontSize={12}
+                      sx={{ mt: 2 }}
+                    >
+                      {
+                        movimiento.cantidadUnidades
+                      }{" "}
+                      {movimiento.unidad ||
+                        "unidades"}{" "}
+                      ×{" "}
+                      {formatearDinero(
+                        movimiento.valorUnidad
+                      )}
+                    </Typography>
+                  )}
 
-                  <Chip
-                    size="small"
-                    label={
-                      movimiento.categoria
-                    }
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    mt: 2,
-                    display: "flex",
-                    justifyContent:
-                      "flex-end",
-                  }}
-                >
-                  <Button
-                    size="small"
-                    onClick={() =>
-                      editarMovimiento(
-                        movimiento
-                      )
-                    }
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent:
+                        "flex-end",
+                      mt: 2,
+                    }}
                   >
-                    Editar
-                  </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        editarMovimiento(
+                          movimiento
+                        )
+                      }
+                    >
+                      Editar
+                    </Button>
 
-                  <Button
-                    size="small"
-                    color="error"
-                    onClick={() =>
-                      eliminarMovimiento(
-                        movimiento
-                      )
-                    }
-                  >
-                    Eliminar
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          )
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={() =>
+                        eliminarMovimiento(
+                          movimiento
+                        )
+                      }
+                    >
+                      Eliminar
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            );
+          }
         )}
       </Box>
     </Box>
   );
 }
 
-function ResumenCard({
+function Resumen({
   titulo,
   valor,
-  icono,
   color,
 }) {
   return (
@@ -1443,27 +1308,18 @@ function ResumenCard({
     >
       <CardContent>
         <Typography
-          sx={{ fontSize: 24 }}
-        >
-          {icono}
-        </Typography>
-
-        <Typography
           color="text.secondary"
           fontSize={13}
-          sx={{ mt: 1 }}
         >
           {titulo}
         </Typography>
 
         <Typography
           sx={{
-            mt: 0.5,
-            fontSize: 22,
+            mt: 0.8,
+            fontSize: 23,
             fontWeight: 900,
-            color:
-              color ||
-              "text.primary",
+            color,
           }}
         >
           {formatearDinero(

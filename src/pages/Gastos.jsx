@@ -8,6 +8,8 @@
 import {
   addDoc,
   deleteDoc,
+  doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   updateDoc,
@@ -25,15 +27,13 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
+
+import {
+  db,
+} from "../services/firebase";
 
 import {
   useAuth,
@@ -49,13 +49,13 @@ import {
   formatearDinero,
 } from "../utils/frecuencia";
 
-const lugares = [
-  "Casa",
-  "Consultorio",
-  "Extras",
-];
+import {
+  construirEspacios,
+  iconoEspacio,
+  obtenerNombreEspacio,
+} from "../utils/espacios";
 
-const tipos = [
+const tiposGasto = [
   "Fijo",
   "Variable",
 ];
@@ -76,7 +76,8 @@ const categorias = [
   "Transporte",
   "Salud",
   "Educación",
-  "Consultorio / Negocio",
+  "Negocio",
+  "Personal",
   "Suscripciones",
   "Impuestos",
   "Ocio",
@@ -84,16 +85,28 @@ const categorias = [
   "Mascotas",
   "Seguros",
   "Deudas",
+  "Mantenimiento",
+  "Insumos",
+  "Publicidad",
+  "Nómina",
   "Otros",
 ];
 
 const formularioInicial = {
   tipo: "Fijo",
-  lugar: "Casa",
-  categoria: "Vivienda",
+
+  espacioId:
+    "personal",
+
+  categoria:
+    "Vivienda",
+
   concepto: "",
+
   monto: "",
-  frecuencia: "Mensual",
+
+  frecuencia:
+    "Mensual",
 };
 
 export default function Gastos() {
@@ -104,6 +117,11 @@ export default function Gastos() {
   const [
     gastos,
     setGastos,
+  ] = useState([]);
+
+  const [
+    origenes,
+    setOrigenes,
   ] = useState([]);
 
   const [
@@ -139,13 +157,13 @@ export default function Gastos() {
   ] = useState("");
 
   const [
-    filtroTipo,
-    setFiltroTipo,
+    filtroEspacio,
+    setFiltroEspacio,
   ] = useState("");
 
   const [
-    filtroLugar,
-    setFiltroLugar,
+    filtroTipo,
+    setFiltroTipo,
   ] = useState("");
 
   const [
@@ -153,34 +171,63 @@ export default function Gastos() {
     setFiltroCategoria,
   ] = useState("");
 
-  const cargarGastos =
+  const cargarDatos =
     useCallback(async () => {
       try {
         setLoading(true);
 
-        const snapshot =
-          await getDocs(
-            userCollection(
-              user.uid,
-              "gastos"
-            )
-          );
+        const [
+          gastosSnapshot,
+          perfilSnapshot,
+        ] =
+          await Promise.all([
+            getDocs(
+              userCollection(
+                user.uid,
+                "gastos"
+              )
+            ),
 
-        const lista =
-          snapshot.docs.map(
+            getDoc(
+              doc(
+                db,
+                "users",
+                user.uid
+              )
+            ),
+          ]);
+
+        const listaGastos =
+          gastosSnapshot.docs.map(
             (documento) => ({
               id: documento.id,
               ...documento.data(),
             })
           );
 
-        setGastos(lista);
+        const perfil =
+          perfilSnapshot.exists()
+            ? perfilSnapshot.data()
+            : {};
+
+        setGastos(
+          listaGastos
+        );
+
+        setOrigenes(
+          Array.isArray(
+            perfil.origenesIngreso
+          )
+            ? perfil.origenesIngreso
+            : []
+        );
+
         setError("");
       } catch (err) {
         console.error(err);
 
         setError(
-          "No fue posible cargar los gastos."
+          "No fue posible cargar tus gastos."
         );
       } finally {
         setLoading(false);
@@ -188,8 +235,31 @@ export default function Gastos() {
     }, [user.uid]);
 
   useEffect(() => {
-    cargarGastos();
-  }, [cargarGastos]);
+    cargarDatos();
+  }, [cargarDatos]);
+
+  const espacios =
+    useMemo(
+      () =>
+        construirEspacios(
+          origenes
+        ),
+      [origenes]
+    );
+
+  const espacioSeleccionado =
+    useMemo(
+      () =>
+        espacios.find(
+          (espacio) =>
+            espacio.id ===
+            formulario.espacioId
+        ) || null,
+      [
+        espacios,
+        formulario.espacioId,
+      ]
+    );
 
   const manejarCambio = (
     campo,
@@ -210,6 +280,7 @@ export default function Gastos() {
       );
 
       setEditandoId(null);
+      setError("");
     };
 
   const guardarGasto =
@@ -243,6 +314,16 @@ export default function Gastos() {
         return;
       }
 
+      if (
+        !espacioSeleccionado
+      ) {
+        setError(
+          "Selecciona un espacio financiero."
+        );
+
+        return;
+      }
+
       try {
         setGuardando(true);
         setError("");
@@ -251,8 +332,24 @@ export default function Gastos() {
           tipo:
             formulario.tipo,
 
+          espacioId:
+            espacioSeleccionado.id,
+
+          espacioTipo:
+            espacioSeleccionado.tipo,
+
+          espacioNombre:
+            espacioSeleccionado.nombre,
+
+          /*
+            Conservamos lugar por
+            compatibilidad temporal
+            con datos/componentes
+            anteriores.
+          */
+
           lugar:
-            formulario.lugar,
+            espacioSeleccionado.nombre,
 
           categoria:
             formulario.categoria,
@@ -294,7 +391,7 @@ export default function Gastos() {
 
         limpiarFormulario();
 
-        await cargarGastos();
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -309,14 +406,52 @@ export default function Gastos() {
   const editarGasto = (
     gasto
   ) => {
+    /*
+      Los gastos antiguos todavía
+      pueden tener Casa /
+      Consultorio / Extras.
+
+      Casa se migra visualmente a
+      Personal / Hogar.
+
+      Los demás necesitan que el
+      usuario seleccione su nuevo
+      espacio antes de guardar.
+    */
+
+    let espacioId =
+      gasto.espacioId ||
+      "";
+
+    if (
+      !espacioId &&
+      gasto.lugar ===
+        "Casa"
+    ) {
+      espacioId =
+        "personal";
+    }
+
+    if (!espacioId) {
+      const coincidencia =
+        espacios.find(
+          (espacio) =>
+            espacio.nombre ===
+            gasto.lugar
+        );
+
+      if (coincidencia) {
+        espacioId =
+          coincidencia.id;
+      }
+    }
+
     setFormulario({
       tipo:
         gasto.tipo ||
         "Fijo",
 
-      lugar:
-        gasto.lugar ||
-        "Casa",
+      espacioId,
 
       categoria:
         gasto.categoria ||
@@ -327,7 +462,7 @@ export default function Gastos() {
         "",
 
       monto:
-        gasto.monto ||
+        gasto.monto ??
         "",
 
       frecuencia:
@@ -338,6 +473,8 @@ export default function Gastos() {
     setEditandoId(
       gasto.id
     );
+
+    setError("");
 
     window.scrollTo({
       top: 0,
@@ -365,7 +502,7 @@ export default function Gastos() {
           )
         );
 
-        await cargarGastos();
+        await cargarDatos();
       } catch (err) {
         console.error(err);
 
@@ -384,42 +521,57 @@ export default function Gastos() {
 
       return gastos.filter(
         (gasto) => {
-          const categoria =
-            gasto.categoria ||
-            "Sin categoría";
+          const nombreEspacio =
+            obtenerNombreEspacio(
+              gasto
+            );
 
-          const concepto =
-            gasto.concepto ||
-            "";
-
-          const coincideBusqueda =
+          const coincideTexto =
             !texto ||
-            concepto
+            (
+              gasto.concepto ||
+              ""
+            )
               .toLowerCase()
               .includes(texto) ||
-            categoria
+            (
+              gasto.categoria ||
+              ""
+            )
+              .toLowerCase()
+              .includes(texto) ||
+            nombreEspacio
               .toLowerCase()
               .includes(texto);
+
+          const espacioRegistro =
+            gasto.espacioId ||
+            (
+              gasto.lugar ===
+              "Casa"
+                ? "personal"
+                : ""
+            );
+
+          const coincideEspacio =
+            !filtroEspacio ||
+            espacioRegistro ===
+              filtroEspacio;
 
           const coincideTipo =
             !filtroTipo ||
             gasto.tipo ===
               filtroTipo;
 
-          const coincideLugar =
-            !filtroLugar ||
-            gasto.lugar ===
-              filtroLugar;
-
           const coincideCategoria =
             !filtroCategoria ||
-            categoria ===
+            gasto.categoria ===
               filtroCategoria;
 
           return (
-            coincideBusqueda &&
+            coincideTexto &&
+            coincideEspacio &&
             coincideTipo &&
-            coincideLugar &&
             coincideCategoria
           );
         }
@@ -427,18 +579,18 @@ export default function Gastos() {
     }, [
       gastos,
       busqueda,
+      filtroEspacio,
       filtroTipo,
-      filtroLugar,
       filtroCategoria,
     ]);
 
   const resumen =
     useMemo(() => {
-      let total = 0;
+      let totalSemanal = 0;
       let fijos = 0;
       let variables = 0;
 
-      gastosFiltrados.forEach(
+      gastos.forEach(
         (gasto) => {
           const semanal =
             calcularSemanal(
@@ -446,7 +598,8 @@ export default function Gastos() {
               gasto.frecuencia
             );
 
-          total += semanal;
+          totalSemanal +=
+            semanal;
 
           if (
             gasto.tipo ===
@@ -461,19 +614,18 @@ export default function Gastos() {
       );
 
       return {
-        total,
+        semanal:
+          totalSemanal,
+
+        mensual:
+          totalSemanal *
+          4.333,
+
         fijos,
+
         variables,
       };
-    }, [gastosFiltrados]);
-
-  const limpiarFiltros =
-    () => {
-      setBusqueda("");
-      setFiltroTipo("");
-      setFiltroLugar("");
-      setFiltroCategoria("");
-    };
+    }, [gastos]);
 
   if (loading) {
     return (
@@ -481,8 +633,8 @@ export default function Gastos() {
         sx={{
           minHeight: "70vh",
           display: "flex",
-          alignItems: "center",
           justifyContent: "center",
+          alignItems: "center",
         }}
       >
         <CircularProgress />
@@ -498,32 +650,35 @@ export default function Gastos() {
           sm: 3,
           lg: 4,
         },
+
         maxWidth: 1450,
         mx: "auto",
       }}
     >
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          sx={{
-            fontSize: {
-              xs: 29,
-              md: 34,
-            },
-            fontWeight: 800,
-          }}
-        >
-          Gastos
-        </Typography>
+      <Typography
+        sx={{
+          fontSize: {
+            xs: 29,
+            md: 34,
+          },
 
-        <Typography
-          color="text.secondary"
-          sx={{ mt: 0.5 }}
-        >
-          Organiza lo que sale de tu
-          dinero y entiende exactamente
-          en qué se está utilizando.
-        </Typography>
-      </Box>
+          fontWeight: 900,
+        }}
+      >
+        Gastos
+      </Typography>
+
+      <Typography
+        color="text.secondary"
+        sx={{
+          mt: 0.5,
+          mb: 3,
+        }}
+      >
+        Organiza tus gastos personales
+        y los de cada trabajo, negocio
+        o fuente financiera.
+      </Typography>
 
       {error && (
         <Alert
@@ -537,14 +692,59 @@ export default function Gastos() {
         </Alert>
       )}
 
+      <Box
+        sx={{
+          display: "grid",
+
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm:
+              "repeat(2, 1fr)",
+            lg:
+              "repeat(4, 1fr)",
+          },
+
+          gap: 2,
+          mb: 3,
+        }}
+      >
+        <ResumenCard
+          titulo="Planeado semanal"
+          valor={
+            resumen.semanal
+          }
+          icono="📅"
+        />
+
+        <ResumenCard
+          titulo="Planeado mensual"
+          valor={
+            resumen.mensual
+          }
+          icono="🗓️"
+        />
+
+        <ResumenCard
+          titulo="Gastos fijos"
+          valor={
+            resumen.fijos
+          }
+          icono="📌"
+        />
+
+        <ResumenCard
+          titulo="Gastos variables"
+          valor={
+            resumen.variables
+          }
+          icono="🔄"
+        />
+      </Box>
+
       <Card
         sx={{
           borderRadius: "24px",
           mb: 3,
-          border:
-            editandoId
-              ? "1px solid #DCD5FF"
-              : "1px solid rgba(0,0,0,.03)",
         }}
       >
         <CardContent
@@ -555,46 +755,26 @@ export default function Gastos() {
             },
           }}
         >
-          <Box
+          <Typography
+            fontWeight={900}
+            fontSize={20}
+          >
+            {editandoId
+              ? "Editar gasto"
+              : "Nuevo gasto"}
+          </Typography>
+
+          <Typography
+            color="text.secondary"
+            fontSize={13}
             sx={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 1,
-              mb: 2.5,
+              mt: 0.5,
+              mb: 3,
             }}
           >
-            <Box>
-              <Typography
-                fontWeight={800}
-                fontSize={19}
-              >
-                {editandoId
-                  ? "Editar gasto"
-                  : "Nuevo gasto"}
-              </Typography>
-
-              {editandoId && (
-                <Typography
-                  color="text.secondary"
-                  fontSize={13}
-                >
-                  Estás modificando un
-                  registro existente.
-                </Typography>
-              )}
-            </Box>
-
-            {editandoId && (
-              <Chip
-                label="Modo edición"
-                color="primary"
-                size="small"
-              />
-            )}
-          </Box>
+            Selecciona a qué parte de
+            tus finanzas pertenece.
+          </Typography>
 
           <Box
             component="form"
@@ -605,26 +785,68 @@ export default function Gastos() {
             <Box
               sx={{
                 display: "grid",
+
                 gridTemplateColumns: {
                   xs: "1fr",
-                  sm:
+                  md:
                     "repeat(2, 1fr)",
-                  lg:
+                  xl:
                     "repeat(3, 1fr)",
                 },
+
                 gap: 2,
               }}
             >
-              <FormControl fullWidth>
+              <FormControl>
+                <InputLabel>
+                  Espacio
+                </InputLabel>
+
+                <Select
+                  label="Espacio"
+                  value={
+                    formulario.espacioId
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    manejarCambio(
+                      "espacioId",
+                      event.target.value
+                    )
+                  }
+                >
+                  {espacios.map(
+                    (espacio) => (
+                      <MenuItem
+                        key={
+                          espacio.id
+                        }
+                        value={
+                          espacio.id
+                        }
+                      >
+                        {iconoEspacio(
+                          espacio.tipo
+                        )}{" "}
+                        {espacio.tipo} ·{" "}
+                        {espacio.nombre}
+                      </MenuItem>
+                    )
+                  )}
+                </Select>
+              </FormControl>
+
+              <FormControl>
                 <InputLabel>
                   Tipo
                 </InputLabel>
 
                 <Select
+                  label="Tipo"
                   value={
                     formulario.tipo
                   }
-                  label="Tipo"
                   onChange={(
                     event
                   ) =>
@@ -634,7 +856,7 @@ export default function Gastos() {
                     )
                   }
                 >
-                  {tipos.map(
+                  {tiposGasto.map(
                     (tipo) => (
                       <MenuItem
                         key={tipo}
@@ -647,48 +869,16 @@ export default function Gastos() {
                 </Select>
               </FormControl>
 
-              <FormControl fullWidth>
-                <InputLabel>
-                  Lugar
-                </InputLabel>
-
-                <Select
-                  value={
-                    formulario.lugar
-                  }
-                  label="Lugar"
-                  onChange={(
-                    event
-                  ) =>
-                    manejarCambio(
-                      "lugar",
-                      event.target.value
-                    )
-                  }
-                >
-                  {lugares.map(
-                    (lugar) => (
-                      <MenuItem
-                        key={lugar}
-                        value={lugar}
-                      >
-                        {lugar}
-                      </MenuItem>
-                    )
-                  )}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth>
+              <FormControl>
                 <InputLabel>
                   Categoría
                 </InputLabel>
 
                 <Select
+                  label="Categoría"
                   value={
                     formulario.categoria
                   }
-                  label="Categoría"
                   onChange={(
                     event
                   ) =>
@@ -701,8 +891,12 @@ export default function Gastos() {
                   {categorias.map(
                     (categoria) => (
                       <MenuItem
-                        key={categoria}
-                        value={categoria}
+                        key={
+                          categoria
+                        }
+                        value={
+                          categoria
+                        }
                       >
                         {categoria}
                       </MenuItem>
@@ -724,8 +918,7 @@ export default function Gastos() {
                     event.target.value
                   )
                 }
-                placeholder="Ej. Internet"
-                fullWidth
+                placeholder="Ej. Internet, renta del local..."
               />
 
               <TextField
@@ -742,23 +935,18 @@ export default function Gastos() {
                     event.target.value
                   )
                 }
-                inputProps={{
-                  min: 0,
-                  step: "0.01",
-                }}
-                fullWidth
               />
 
-              <FormControl fullWidth>
+              <FormControl>
                 <InputLabel>
                   Frecuencia
                 </InputLabel>
 
                 <Select
+                  label="Frecuencia"
                   value={
                     formulario.frecuencia
                   }
-                  label="Frecuencia"
                   onChange={(
                     event
                   ) =>
@@ -771,8 +959,12 @@ export default function Gastos() {
                   {frecuencias.map(
                     (frecuencia) => (
                       <MenuItem
-                        key={frecuencia}
-                        value={frecuencia}
+                        key={
+                          frecuencia
+                        }
+                        value={
+                          frecuencia
+                        }
                       >
                         {frecuencia}
                       </MenuItem>
@@ -785,15 +977,17 @@ export default function Gastos() {
             <Box
               sx={{
                 display: "flex",
-                gap: 1.5,
-                mt: 2.5,
                 flexWrap: "wrap",
+                gap: 1.5,
+                mt: 3,
               }}
             >
               <Button
                 type="submit"
                 variant="contained"
-                disabled={guardando}
+                disabled={
+                  guardando
+                }
               >
                 {guardando
                   ? "Guardando..."
@@ -820,523 +1014,174 @@ export default function Gastos() {
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
-            sm:
-              "repeat(3, 1fr)",
+            md:
+              "2fr 1fr 1fr 1fr",
           },
-          gap: 2,
+
+          gap: 1.5,
           mb: 3,
         }}
       >
-        <MiniResumen
-          titulo="Gasto semanal"
-          valor={resumen.total}
-          icono="🧾"
-          color="#EF4444"
-        />
-
-        <MiniResumen
-          titulo="Gastos fijos"
-          valor={resumen.fijos}
-          icono="📌"
-        />
-
-        <MiniResumen
-          titulo="Gastos variables"
-          valor={
-            resumen.variables
+        <TextField
+          label="Buscar"
+          value={busqueda}
+          onChange={(
+            event
+          ) =>
+            setBusqueda(
+              event.target.value
+            )
           }
-          icono="🔄"
         />
+
+        <FormControl>
+          <InputLabel>
+            Espacio
+          </InputLabel>
+
+          <Select
+            label="Espacio"
+            value={
+              filtroEspacio
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroEspacio(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todos
+            </MenuItem>
+
+            {espacios.map(
+              (espacio) => (
+                <MenuItem
+                  key={
+                    espacio.id
+                  }
+                  value={
+                    espacio.id
+                  }
+                >
+                  {
+                    espacio.nombre
+                  }
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
+
+        <FormControl>
+          <InputLabel>
+            Tipo
+          </InputLabel>
+
+          <Select
+            label="Tipo"
+            value={
+              filtroTipo
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroTipo(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todos
+            </MenuItem>
+
+            {tiposGasto.map(
+              (tipo) => (
+                <MenuItem
+                  key={tipo}
+                  value={tipo}
+                >
+                  {tipo}
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
+
+        <FormControl>
+          <InputLabel>
+            Categoría
+          </InputLabel>
+
+          <Select
+            label="Categoría"
+            value={
+              filtroCategoria
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroCategoria(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todas
+            </MenuItem>
+
+            {categorias.map(
+              (categoria) => (
+                <MenuItem
+                  key={
+                    categoria
+                  }
+                  value={
+                    categoria
+                  }
+                >
+                  {categoria}
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
       </Box>
-
-      <Card
-        sx={{
-          borderRadius: "24px",
-          mb: 3,
-        }}
-      >
-        <CardContent sx={{ p: 2.5 }}>
-          <Typography
-            fontWeight={800}
-            sx={{ mb: 2 }}
-          >
-            Buscar y filtrar
-          </Typography>
-
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                md:
-                  "2fr repeat(3, 1fr)",
-              },
-              gap: 1.5,
-            }}
-          >
-            <TextField
-              label="Buscar gasto"
-              placeholder="Ej. Internet, gasolina..."
-              value={busqueda}
-              onChange={(
-                event
-              ) =>
-                setBusqueda(
-                  event.target.value
-                )
-              }
-            />
-
-            <FormControl>
-              <InputLabel>
-                Tipo
-              </InputLabel>
-
-              <Select
-                label="Tipo"
-                value={
-                  filtroTipo
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroTipo(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todos
-                </MenuItem>
-
-                {tipos.map(
-                  (tipo) => (
-                    <MenuItem
-                      key={tipo}
-                      value={tipo}
-                    >
-                      {tipo}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Lugar
-              </InputLabel>
-
-              <Select
-                label="Lugar"
-                value={
-                  filtroLugar
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroLugar(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todos
-                </MenuItem>
-
-                {lugares.map(
-                  (lugar) => (
-                    <MenuItem
-                      key={lugar}
-                      value={lugar}
-                    >
-                      {lugar}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-
-            <FormControl>
-              <InputLabel>
-                Categoría
-              </InputLabel>
-
-              <Select
-                label="Categoría"
-                value={
-                  filtroCategoria
-                }
-                onChange={(
-                  event
-                ) =>
-                  setFiltroCategoria(
-                    event.target.value
-                  )
-                }
-              >
-                <MenuItem value="">
-                  Todas
-                </MenuItem>
-
-                <MenuItem value="Sin categoría">
-                  Sin categoría
-                </MenuItem>
-
-                {categorias.map(
-                  (categoria) => (
-                    <MenuItem
-                      key={categoria}
-                      value={categoria}
-                    >
-                      {categoria}
-                    </MenuItem>
-                  )
-                )}
-              </Select>
-            </FormControl>
-          </Box>
-
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 1,
-              mt: 2,
-            }}
-          >
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              {
-                gastosFiltrados.length
-              }{" "}
-              {gastosFiltrados.length ===
-              1
-                ? "gasto encontrado"
-                : "gastos encontrados"}
-            </Typography>
-
-            <Button
-              size="small"
-              onClick={
-                limpiarFiltros
-              }
-            >
-              Limpiar filtros
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-
-      <Card
-        sx={{
-          display: {
-            xs: "none",
-            md: "block",
-          },
-          borderRadius: "24px",
-          overflow: "hidden",
-        }}
-      >
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>
-                  Concepto
-                </TableCell>
-
-                <TableCell>
-                  Categoría
-                </TableCell>
-
-                <TableCell>
-                  Tipo
-                </TableCell>
-
-                <TableCell>
-                  Lugar
-                </TableCell>
-
-                <TableCell>
-                  Monto
-                </TableCell>
-
-                <TableCell>
-                  Frecuencia
-                </TableCell>
-
-                <TableCell>
-                  Semanal
-                </TableCell>
-
-                <TableCell align="right">
-                  Acciones
-                </TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
-              {gastosFiltrados.map(
-                (gasto) => (
-                  <TableRow
-                    key={gasto.id}
-                    hover
-                  >
-                    <TableCell>
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {gasto.concepto}
-                      </Typography>
-                    </TableCell>
-
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={
-                          gasto.categoria ||
-                          "Sin categoría"
-                        }
-                      />
-                    </TableCell>
-
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={gasto.tipo}
-                        color={
-                          gasto.tipo ===
-                          "Fijo"
-                            ? "default"
-                            : "warning"
-                        }
-                      />
-                    </TableCell>
-
-                    <TableCell>
-                      {gasto.lugar}
-                    </TableCell>
-
-                    <TableCell>
-                      {formatearDinero(
-                        gasto.monto
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {gasto.frecuencia}
-                    </TableCell>
-
-                    <TableCell>
-                      <Typography
-                        fontWeight={700}
-                        color="error"
-                      >
-                        {formatearDinero(
-                          calcularSemanal(
-                            gasto.monto,
-                            gasto.frecuencia
-                          )
-                        )}
-                      </Typography>
-                    </TableCell>
-
-                    <TableCell
-                      align="right"
-                    >
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          editarGasto(
-                            gasto
-                          )
-                        }
-                      >
-                        Editar
-                      </Button>
-
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() =>
-                          eliminarGasto(
-                            gasto
-                          )
-                        }
-                      >
-                        Eliminar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              )}
-
-              {gastosFiltrados.length ===
-                0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    align="center"
-                    sx={{ py: 6 }}
-                  >
-                    <Typography
-                      color="text.secondary"
-                    >
-                      No encontramos gastos
-                      con esos filtros.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
 
       <Box
         sx={{
-          display: {
-            xs: "grid",
-            md: "none",
+          display: "grid",
+
+          gridTemplateColumns: {
+            xs: "1fr",
+            xl:
+              "repeat(2, 1fr)",
           },
-          gap: 1.5,
+
+          gap: 2,
         }}
       >
         {gastosFiltrados.map(
           (gasto) => (
-            <Card
+            <GastoCard
               key={gasto.id}
-              sx={{
-                borderRadius: "20px",
-              }}
-            >
-              <CardContent>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    gap: 2,
-                  }}
-                >
-                  <Box>
-                    <Typography
-                      fontWeight={800}
-                    >
-                      {gasto.concepto}
-                    </Typography>
-
-                    <Typography
-                      color="text.secondary"
-                      fontSize={13}
-                    >
-                      {gasto.lugar} ·{" "}
-                      {gasto.categoria ||
-                        "Sin categoría"}
-                    </Typography>
-                  </Box>
-
-                  <Typography
-                    sx={{
-                      fontWeight: 900,
-                      color: "#EF4444",
-                    }}
-                  >
-                    {formatearDinero(
-                      gasto.monto
-                    )}
-                  </Typography>
-                </Box>
-
-                <Box
-                  sx={{
-                    display: "flex",
-                    gap: 1,
-                    mt: 2,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Chip
-                    size="small"
-                    label={gasto.tipo}
-                  />
-
-                  <Chip
-                    size="small"
-                    label={
-                      gasto.frecuencia
-                    }
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    mt: 2,
-                    pt: 2,
-                    borderTop:
-                      "1px solid #EEEFF3",
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    alignItems: "center",
-                    gap: 1,
-                  }}
-                >
-                  <Box>
-                    <Typography
-                      color="text.secondary"
-                      fontSize={11}
-                    >
-                      Equivalente semanal
-                    </Typography>
-
-                    <Typography
-                      fontWeight={800}
-                    >
-                      {formatearDinero(
-                        calcularSemanal(
-                          gasto.monto,
-                          gasto.frecuencia
-                        )
-                      )}
-                    </Typography>
-                  </Box>
-
-                  <Box>
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        editarGasto(
-                          gasto
-                        )
-                      }
-                    >
-                      Editar
-                    </Button>
-
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() =>
-                        eliminarGasto(
-                          gasto
-                        )
-                      }
-                    >
-                      Eliminar
-                    </Button>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
+              gasto={gasto}
+              onEditar={() =>
+                editarGasto(
+                  gasto
+                )
+              }
+              onEliminar={() =>
+                eliminarGasto(
+                  gasto
+                )
+              }
+            />
           )
         )}
 
@@ -1344,26 +1189,39 @@ export default function Gastos() {
           0 && (
           <Card
             sx={{
-              borderRadius: "20px",
+              gridColumn:
+                "1 / -1",
+              borderRadius:
+                "24px",
             }}
           >
             <CardContent
               sx={{
-                py: 5,
-                textAlign: "center",
+                py: 6,
+                textAlign:
+                  "center",
               }}
             >
               <Typography
-                fontSize={28}
+                fontSize={34}
               >
-                🔎
+                🧾
               </Typography>
 
               <Typography
-                fontWeight={800}
+                fontWeight={900}
+                fontSize={19}
                 sx={{ mt: 1 }}
               >
-                Sin resultados
+                No hay gastos
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={13}
+              >
+                Agrega tu primer gasto
+                planeado.
               </Typography>
             </CardContent>
           </Card>
@@ -1373,11 +1231,172 @@ export default function Gastos() {
   );
 }
 
-function MiniResumen({
+function GastoCard({
+  gasto,
+  onEditar,
+  onEliminar,
+}) {
+  const nombre =
+    obtenerNombreEspacio(
+      gasto
+    );
+
+  const esAnterior =
+    !gasto.espacioId;
+
+  const semanal =
+    calcularSemanal(
+      gasto.monto,
+      gasto.frecuencia
+    );
+
+  return (
+    <Card
+      sx={{
+        borderRadius: "24px",
+
+        border:
+          esAnterior
+            ? "1px solid #F59E0B"
+            : "1px solid rgba(0,0,0,.03)",
+      }}
+    >
+      <CardContent sx={{ p: 3 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography
+              fontWeight={900}
+              fontSize={20}
+            >
+              {gasto.concepto}
+            </Typography>
+
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+            >
+              {nombre}
+            </Typography>
+          </Box>
+
+          <Typography
+            fontSize={26}
+          >
+            {iconoEspacio(
+              gasto.espacioTipo ||
+              (
+                gasto.lugar ===
+                "Casa"
+                  ? "Personal"
+                  : ""
+              )
+            )}
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            flexWrap: "wrap",
+            mt: 2,
+          }}
+        >
+          <Chip
+            size="small"
+            label={
+              gasto.tipo ||
+              "Sin tipo"
+            }
+          />
+
+          <Chip
+            size="small"
+            label={
+              gasto.categoria ||
+              "Otros"
+            }
+          />
+
+          {esAnterior && (
+            <Chip
+              size="small"
+              color="warning"
+              label="Actualizar espacio"
+            />
+          )}
+        </Box>
+
+        <Box
+          sx={{
+            mt: 3,
+
+            display: "grid",
+
+            gridTemplateColumns:
+              "repeat(2, 1fr)",
+
+            gap: 2,
+          }}
+        >
+          <Dato
+            titulo="Monto"
+            valor={formatearDinero(
+              gasto.monto
+            )}
+            detalle={
+              gasto.frecuencia
+            }
+          />
+
+          <Dato
+            titulo="Equivalente semanal"
+            valor={formatearDinero(
+              semanal
+            )}
+          />
+        </Box>
+
+        <Box
+          sx={{
+            mt: 3,
+            display: "flex",
+            gap: 1,
+          }}
+        >
+          <Button
+            size="small"
+            onClick={onEditar}
+          >
+            Editar
+          </Button>
+
+          <Button
+            size="small"
+            color="error"
+            onClick={
+              onEliminar
+            }
+          >
+            Eliminar
+          </Button>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResumenCard({
   titulo,
   valor,
   icono,
-  color,
 }) {
   return (
     <Card
@@ -1386,54 +1405,63 @@ function MiniResumen({
       }}
     >
       <CardContent>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems: "center",
-          }}
+        <Typography
+          fontSize={23}
         >
-          <Box>
-            <Typography
-              color="text.secondary"
-              fontSize={13}
-            >
-              {titulo}
-            </Typography>
+          {icono}
+        </Typography>
 
-            <Typography
-              sx={{
-                mt: 0.5,
-                fontSize: 22,
-                fontWeight: 900,
-                color:
-                  color ||
-                  "text.primary",
-              }}
-            >
-              {formatearDinero(
-                valor
-              )}
-            </Typography>
+        <Typography
+          color="text.secondary"
+          fontSize={13}
+          sx={{ mt: 1 }}
+        >
+          {titulo}
+        </Typography>
 
-            <Typography
-              color="text.secondary"
-              fontSize={11}
-            >
-              equivalente semanal
-            </Typography>
-          </Box>
-
-          <Typography
-            sx={{
-              fontSize: 24,
-            }}
-          >
-            {icono}
-          </Typography>
-        </Box>
+        <Typography
+          fontWeight={900}
+          fontSize={22}
+          sx={{ mt: 0.5 }}
+        >
+          {formatearDinero(
+            valor
+          )}
+        </Typography>
       </CardContent>
     </Card>
+  );
+}
+
+function Dato({
+  titulo,
+  valor,
+  detalle,
+}) {
+  return (
+    <Box>
+      <Typography
+        color="text.secondary"
+        fontSize={12}
+      >
+        {titulo}
+      </Typography>
+
+      <Typography
+        fontWeight={900}
+        fontSize={18}
+      >
+        {valor}
+      </Typography>
+
+      {detalle && (
+        <Typography
+          color="text.secondary"
+          fontSize={11}
+        >
+          {detalle}
+        </Typography>
+      )}
+    </Box>
   );
 }

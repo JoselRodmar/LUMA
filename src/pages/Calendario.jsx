@@ -6,6 +6,8 @@ import {
 } from "react";
 
 import {
+  doc,
+  getDoc,
   getDocs,
 } from "firebase/firestore";
 
@@ -15,8 +17,17 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  FormControl,
+  InputLabel,
+  LinearProgress,
+  MenuItem,
+  Select,
   Typography,
 } from "@mui/material";
+
+import {
+  db,
+} from "../services/firebase";
 
 import {
   useAuth,
@@ -35,8 +46,33 @@ import {
   calcularDiasRestantes,
   calcularPendienteApartado,
   calcularPorcentajeApartado,
-  obtenerFechaLocal,
 } from "../utils/apartados";
+
+import {
+  construirEspacios,
+  obtenerNombreEspacio,
+} from "../utils/espacios";
+
+const formatearFecha = (
+  fecha
+) => {
+  if (!fecha) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "es-MX",
+    {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }
+  ).format(
+    new Date(
+      `${fecha}T12:00:00`
+    )
+  );
+};
 
 const obtenerEstado = (
   apartado
@@ -54,56 +90,64 @@ const obtenerEstado = (
 
   if (pendiente <= 0) {
     return {
-      texto: "Completo",
-      color: "success",
+      nombre:
+        "Completado",
+
+      color:
+        "success",
+    };
+  }
+
+  if (
+    apartado.activo ===
+    false
+  ) {
+    return {
+      nombre:
+        "Pausado",
+
+      color:
+        "default",
     };
   }
 
   if (dias < 0) {
     return {
-      texto: "Vencido",
-      color: "error",
+      nombre:
+        "Vencido",
+
+      color:
+        "error",
     };
   }
 
   if (dias <= 7) {
     return {
-      texto: "Esta semana",
-      color: "warning",
+      nombre:
+        "Esta semana",
+
+      color:
+        "warning",
     };
   }
 
   if (dias <= 30) {
     return {
-      texto: "Próximo",
-      color: "primary",
+      nombre:
+        "Próximo",
+
+      color:
+        "info",
     };
   }
 
   return {
-    texto: "Planeado",
-    color: "default",
+    nombre:
+      "Planeado",
+
+    color:
+      "default",
   };
-};
-
-const formatearFecha = (
-  fecha
-) => {
-  const valor =
-    obtenerFechaLocal(fecha);
-
-  if (!valor) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat(
-    "es-MX",
-    {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }
-  ).format(valor);
 };
 
 export default function Calendario() {
@@ -117,131 +161,195 @@ export default function Calendario() {
   ] = useState([]);
 
   const [
+    origenes,
+    setOrigenes,
+  ] = useState([]);
+
+  const [
     loading,
     setLoading,
   ] = useState(true);
 
   const [
-    error,
-    setError,
+    filtroEspacio,
+    setFiltroEspacio,
   ] = useState("");
 
-  const cargarApartados =
-    useCallback(async () => {
-      try {
-        setLoading(true);
+  const [
+    filtroEstado,
+    setFiltroEstado,
+  ] = useState("");
 
-        const snapshot =
-          await getDocs(
-            userCollection(
-              user.uid,
-              "apartados"
+  const cargarDatos =
+    useCallback(
+      async () => {
+        try {
+          setLoading(true);
+
+          const [
+            apartadosSnapshot,
+            perfilSnapshot,
+          ] =
+            await Promise.all([
+              getDocs(
+                userCollection(
+                  user.uid,
+                  "apartados"
+                )
+              ),
+
+              getDoc(
+                doc(
+                  db,
+                  "users",
+                  user.uid
+                )
+              ),
+            ]);
+
+          const lista =
+            apartadosSnapshot.docs.map(
+              (documento) => ({
+                id:
+                  documento.id,
+
+                ...documento.data(),
+              })
+            );
+
+          lista.sort(
+            (a, b) =>
+              (
+                a.fechaVencimiento ||
+                ""
+              ).localeCompare(
+                b.fechaVencimiento ||
+                  ""
+              )
+          );
+
+          const perfil =
+            perfilSnapshot.exists()
+              ? perfilSnapshot.data()
+              : {};
+
+          setApartados(
+            lista
+          );
+
+          setOrigenes(
+            Array.isArray(
+              perfil.origenesIngreso
             )
+              ? perfil.origenesIngreso
+              : []
           );
-
-        const lista =
-          snapshot.docs.map(
-            (documento) => ({
-              id: documento.id,
-              ...documento.data(),
-            })
+        } catch (error) {
+          console.error(
+            "Error cargando calendario:",
+            error
           );
-
-        setApartados(lista);
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "No fue posible cargar el calendario financiero."
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, [user.uid]);
+        } finally {
+          setLoading(false);
+        }
+      },
+      [user.uid]
+    );
 
   useEffect(() => {
-    cargarApartados();
-  }, [cargarApartados]);
+    cargarDatos();
+  }, [cargarDatos]);
 
-  const apartadosOrdenados =
-    useMemo(() => {
-      return [...apartados].sort(
-        (a, b) => {
-          const fechaA =
-            obtenerFechaLocal(
-              a.fechaVencimiento
+  const espacios =
+    useMemo(
+      () =>
+        construirEspacios(
+          origenes
+        ),
+      [origenes]
+    );
+
+  const listaFiltrada =
+    useMemo(
+      () =>
+        apartados.filter(
+          (apartado) => {
+            const espacioId =
+              apartado.espacioId ||
+              (
+                apartado.lugar ===
+                "Casa"
+                  ? "personal"
+                  : ""
+              );
+
+            const coincideEspacio =
+              !filtroEspacio ||
+              espacioId ===
+                filtroEspacio;
+
+            const estado =
+              obtenerEstado(
+                apartado
+              );
+
+            const coincideEstado =
+              !filtroEstado ||
+              estado.nombre ===
+                filtroEstado;
+
+            return (
+              coincideEspacio &&
+              coincideEstado
             );
-
-          const fechaB =
-            obtenerFechaLocal(
-              b.fechaVencimiento
-            );
-
-          if (
-            !fechaA &&
-            !fechaB
-          ) {
-            return 0;
           }
-
-          if (!fechaA) {
-            return 1;
-          }
-
-          if (!fechaB) {
-            return -1;
-          }
-
-          return (
-            fechaA.getTime() -
-            fechaB.getTime()
-          );
-        }
-      );
-    }, [apartados]);
+        ),
+      [
+        apartados,
+        filtroEspacio,
+        filtroEstado,
+      ]
+    );
 
   const resumen =
     useMemo(() => {
-      let totalObjetivo = 0;
-      let totalReservado = 0;
-      let totalPendiente = 0;
-      let reservaSemanal = 0;
+      let objetivo = 0;
+      let reservado = 0;
+      let pendiente = 0;
+      let semanal = 0;
 
-      apartados.forEach(
+      listaFiltrada.forEach(
         (apartado) => {
-          const objetivo =
+          objetivo +=
             Number(
               apartado.montoObjetivo ||
                 0
             );
 
-          const reservado =
+          reservado +=
             Number(
               apartado.ahorrado ||
                 0
             );
 
-          totalObjetivo +=
-            objetivo;
-
-          totalReservado +=
-            reservado;
-
-          totalPendiente +=
+          pendiente +=
             calcularPendienteApartado(
-              objetivo,
-              reservado
+              apartado.montoObjetivo,
+              apartado.ahorrado
             );
 
           if (
             apartado.activo !==
-            false
+              false &&
+            calcularPendienteApartado(
+              apartado.montoObjetivo,
+              apartado.ahorrado
+            ) > 0
           ) {
-            reservaSemanal +=
+            semanal +=
               calcularApartadoSemanal(
-                objetivo,
-                reservado,
+                apartado.montoObjetivo,
+                apartado.ahorrado,
                 apartado.fechaVencimiento
               );
           }
@@ -249,45 +357,20 @@ export default function Calendario() {
       );
 
       return {
-        totalObjetivo,
-        totalReservado,
-        totalPendiente,
-        reservaSemanal,
+        objetivo,
+        reservado,
+        pendiente,
+        semanal,
       };
-    }, [apartados]);
-
-  const proximos30Dias =
-    useMemo(() => {
-      return apartados.filter(
-        (apartado) => {
-          const dias =
-            calcularDiasRestantes(
-              apartado.fechaVencimiento
-            );
-
-          const pendiente =
-            calcularPendienteApartado(
-              apartado.montoObjetivo,
-              apartado.ahorrado
-            );
-
-          return (
-            dias >= 0 &&
-            dias <= 30 &&
-            pendiente > 0
-          );
-        }
-      ).length;
-    }, [apartados]);
+    }, [listaFiltrada]);
 
   if (loading) {
     return (
       <Box
         sx={{
           minHeight: "70vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          display: "grid",
+          placeItems: "center",
         }}
       >
         <CircularProgress />
@@ -303,7 +386,8 @@ export default function Calendario() {
           sm: 3,
           lg: 4,
         },
-        maxWidth: 1400,
+
+        maxWidth: 1250,
         mx: "auto",
       }}
     >
@@ -313,10 +397,11 @@ export default function Calendario() {
             xs: 29,
             md: 34,
           },
-          fontWeight: 800,
+
+          fontWeight: 900,
         }}
       >
-        Calendario financiero
+        Calendario
       </Typography>
 
       <Typography
@@ -326,112 +411,161 @@ export default function Calendario() {
           mb: 3,
         }}
       >
-        Visualiza tus próximos
-        compromisos y cuánto
-        necesitas preparar.
+        Visualiza cuándo necesitas
+        tener listo el dinero de tus
+        apartados.
       </Typography>
-
-      {error && (
-        <Card
-          sx={{
-            mb: 3,
-            borderRadius: "20px",
-          }}
-        >
-          <CardContent>
-            <Typography
-              color="error"
-              fontWeight={600}
-            >
-              {error}
-            </Typography>
-          </CardContent>
-        </Card>
-      )}
 
       <Box
         sx={{
           display: "grid",
+
           gridTemplateColumns: {
             xs: "1fr",
             sm:
               "repeat(2, 1fr)",
-            lg:
+            xl:
               "repeat(4, 1fr)",
           },
+
           gap: 2,
+          mb: 3,
         }}
       >
-        <ResumenCard
-          titulo="Objetivo total"
+        <Resumen
+          titulo="Objetivos"
           valor={
-            resumen.totalObjetivo
+            resumen.objetivo
           }
-          icono="🎯"
         />
 
-        <ResumenCard
-          titulo="Ya reservado"
+        <Resumen
+          titulo="Reservado"
           valor={
-            resumen.totalReservado
+            resumen.reservado
           }
-          icono="💰"
         />
 
-        <ResumenCard
+        <Resumen
           titulo="Pendiente"
           valor={
-            resumen.totalPendiente
+            resumen.pendiente
           }
-          icono="📌"
         />
 
-        <ResumenCard
+        <Resumen
           titulo="Reserva semanal"
           valor={
-            resumen.reservaSemanal
+            resumen.semanal
           }
-          icono="📅"
         />
       </Box>
 
-      <Card
+      <Box
         sx={{
-          mt: 3,
-          borderRadius: "24px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 1.5,
+          mb: 3,
         }}
       >
-        <CardContent sx={{ p: 3 }}>
-          <Typography
-            color="text.secondary"
-            fontSize={12}
-            fontWeight={800}
-          >
-            PRÓXIMOS 30 DÍAS
-          </Typography>
+        <FormControl
+          sx={{
+            minWidth: 220,
+          }}
+        >
+          <InputLabel>
+            Espacio
+          </InputLabel>
 
-          <Typography
-            sx={{
-              fontSize: 30,
-              fontWeight: 900,
-              mt: 0.5,
-            }}
+          <Select
+            label="Espacio"
+            value={
+              filtroEspacio
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroEspacio(
+                event.target.value
+              )
+            }
           >
-            {proximos30Dias}
-          </Typography>
-        </CardContent>
-      </Card>
+            <MenuItem value="">
+              Todos
+            </MenuItem>
 
-      <Typography
-        sx={{
-          mt: 4,
-          mb: 2,
-          fontSize: 22,
-          fontWeight: 800,
-        }}
-      >
-        Próximos compromisos
-      </Typography>
+            {espacios.map(
+              (espacio) => (
+                <MenuItem
+                  key={
+                    espacio.id
+                  }
+                  value={
+                    espacio.id
+                  }
+                >
+                  {
+                    espacio.nombre
+                  }
+                </MenuItem>
+              )
+            )}
+          </Select>
+        </FormControl>
+
+        <FormControl
+          sx={{
+            minWidth: 180,
+          }}
+        >
+          <InputLabel>
+            Estado
+          </InputLabel>
+
+          <Select
+            label="Estado"
+            value={
+              filtroEstado
+            }
+            onChange={(
+              event
+            ) =>
+              setFiltroEstado(
+                event.target.value
+              )
+            }
+          >
+            <MenuItem value="">
+              Todos
+            </MenuItem>
+
+            <MenuItem value="Esta semana">
+              Esta semana
+            </MenuItem>
+
+            <MenuItem value="Próximo">
+              Próximo
+            </MenuItem>
+
+            <MenuItem value="Planeado">
+              Planeado
+            </MenuItem>
+
+            <MenuItem value="Pausado">
+              Pausado
+            </MenuItem>
+
+            <MenuItem value="Vencido">
+              Vencido
+            </MenuItem>
+
+            <MenuItem value="Completado">
+              Completado
+            </MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
 
       <Box
         sx={{
@@ -439,254 +573,54 @@ export default function Calendario() {
           gap: 2,
         }}
       >
-        {apartadosOrdenados.map(
-          (apartado) => {
-            const objetivo =
-              Number(
-                apartado.montoObjetivo ||
-                  0
-              );
-
-            const reservado =
-              Number(
-                apartado.ahorrado ||
-                  0
-              );
-
-            const pendiente =
-              calcularPendienteApartado(
-                objetivo,
-                reservado
-              );
-
-            const semanal =
-              calcularApartadoSemanal(
-                objetivo,
-                reservado,
-                apartado.fechaVencimiento
-              );
-
-            const porcentaje =
-              calcularPorcentajeApartado(
-                objetivo,
-                reservado
-              );
-
-            const dias =
-              calcularDiasRestantes(
-                apartado.fechaVencimiento
-              );
-
-            const estado =
-              obtenerEstado(
+        {listaFiltrada.map(
+          (apartado) => (
+            <EventoApartado
+              key={
+                apartado.id
+              }
+              apartado={
                 apartado
-              );
-
-            return (
-              <Card
-                key={apartado.id}
-                sx={{
-                  borderRadius: "24px",
-                }}
-              >
-                <CardContent
-                  sx={{ p: 3 }}
-                >
-                  <Box
-                    sx={{
-                      display: "flex",
-                      flexDirection: {
-                        xs: "column",
-                        md: "row",
-                      },
-                      justifyContent:
-                        "space-between",
-                      gap: 2,
-                    }}
-                  >
-                    <Box>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems:
-                            "center",
-                          gap: 1,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <Typography
-                          sx={{
-                            fontSize: 21,
-                            fontWeight:
-                              800,
-                          }}
-                        >
-                          {
-                            apartado.concepto
-                          }
-                        </Typography>
-
-                        <Chip
-                          label={
-                            estado.texto
-                          }
-                          color={
-                            estado.color
-                          }
-                          size="small"
-                        />
-                      </Box>
-
-                      <Typography
-                        color="text.secondary"
-                        fontSize={13}
-                      >
-                        {apartado.lugar} ·{" "}
-                        {formatearFecha(
-                          apartado.fechaVencimiento
-                        )}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        color="text.secondary"
-                        fontSize={12}
-                      >
-                        Reserva semanal
-                      </Typography>
-
-                      <Typography
-                        sx={{
-                          fontWeight: 900,
-                          fontSize: 24,
-                          color:
-                            pendiente > 0
-                              ? "#6D5DFB"
-                              : "#10B981",
-                        }}
-                      >
-                        {pendiente > 0
-                          ? formatearDinero(
-                              semanal
-                            )
-                          : "Completo"}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      mt: 3,
-                      height: 10,
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      backgroundColor:
-                        "#ECEEF3",
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width:
-                          `${porcentaje}%`,
-                        height: "100%",
-                        backgroundColor:
-                          pendiente <= 0
-                            ? "#10B981"
-                            : "#6D5DFB",
-                      }}
-                    />
-                  </Box>
-
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: {
-                        xs:
-                          "repeat(2, 1fr)",
-                        md:
-                          "repeat(5, 1fr)",
-                      },
-                      gap: 2,
-                      mt: 2.5,
-                    }}
-                  >
-                    <Dato
-                      titulo="Objetivo"
-                      valor={formatearDinero(
-                        objetivo
-                      )}
-                    />
-
-                    <Dato
-                      titulo="Reservado"
-                      valor={formatearDinero(
-                        reservado
-                      )}
-                    />
-
-                    <Dato
-                      titulo="Pendiente"
-                      valor={formatearDinero(
-                        pendiente
-                      )}
-                    />
-
-                    <Dato
-                      titulo="Avance"
-                      valor={`${Math.round(
-                        porcentaje
-                      )}%`}
-                    />
-
-                    <Dato
-                      titulo="Tiempo"
-                      valor={
-                        pendiente <= 0
-                          ? "Listo"
-                          : dias < 0
-                            ? `${Math.abs(
-                                dias
-                              )} días vencido`
-                            : dias ===
-                                0
-                              ? "Hoy"
-                              : `${dias} días`
-                      }
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            );
-          }
+              }
+            />
+          )
         )}
 
-        {apartadosOrdenados.length ===
+        {listaFiltrada.length ===
           0 && (
           <Card
             sx={{
-              borderRadius: "24px",
+              borderRadius:
+                "24px",
             }}
           >
             <CardContent
               sx={{
-                py: 7,
-                textAlign: "center",
+                textAlign:
+                  "center",
+                py: 6,
               }}
             >
               <Typography
-                sx={{
-                  fontSize: 34,
-                }}
+                fontSize={38}
               >
                 📅
               </Typography>
 
               <Typography
-                fontWeight={800}
-                fontSize={18}
+                fontWeight={900}
+                fontSize={19}
+                sx={{ mt: 1 }}
               >
-                Tu calendario está vacío
+                No hay compromisos
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                fontSize={13}
+              >
+                Los apartados que
+                crees aparecerán aquí.
               </Typography>
             </CardContent>
           </Card>
@@ -696,37 +630,264 @@ export default function Calendario() {
   );
 }
 
-function ResumenCard({
-  titulo,
-  valor,
-  icono,
+function EventoApartado({
+  apartado,
 }) {
+  const estado =
+    obtenerEstado(
+      apartado
+    );
+
+  const pendiente =
+    calcularPendienteApartado(
+      apartado.montoObjetivo,
+      apartado.ahorrado
+    );
+
+  const porcentaje =
+    calcularPorcentajeApartado(
+      apartado.montoObjetivo,
+      apartado.ahorrado
+    );
+
+  const semanal =
+    calcularApartadoSemanal(
+      apartado.montoObjetivo,
+      apartado.ahorrado,
+      apartado.fechaVencimiento
+    );
+
+  const dias =
+    calcularDiasRestantes(
+      apartado.fechaVencimiento
+    );
+
   return (
     <Card
       sx={{
         borderRadius: "22px",
       }}
     >
-      <CardContent sx={{ p: 2.5 }}>
-        <Typography
-          sx={{ fontSize: 22 }}
-        >
-          {icono}
-        </Typography>
+      <CardContent
+        sx={{
+          p: {
+            xs: 2.5,
+            md: 3,
+          },
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
 
+            flexDirection: {
+              xs: "column",
+              md: "row",
+            },
+
+            justifyContent:
+              "space-between",
+
+            gap: 2,
+          }}
+        >
+          <Box
+            sx={{
+              flex: 1,
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                flexWrap: "wrap",
+              }}
+            >
+              <Typography
+                fontWeight={900}
+                fontSize={20}
+              >
+                {
+                  apartado.concepto
+                }
+              </Typography>
+
+              <Chip
+                size="small"
+                label={
+                  estado.nombre
+                }
+                color={
+                  estado.color
+                }
+              />
+            </Box>
+
+            <Typography
+              color="text.secondary"
+              fontSize={13}
+              sx={{ mt: 0.5 }}
+            >
+              {obtenerNombreEspacio(
+                apartado
+              )}
+            </Typography>
+
+            <Typography
+              fontWeight={700}
+              sx={{ mt: 2 }}
+            >
+              {formatearFecha(
+                apartado.fechaVencimiento
+              )}
+            </Typography>
+
+            {pendiente > 0 && (
+              <Typography
+                color="text.secondary"
+                fontSize={12}
+              >
+                {dias >= 0
+                  ? `Faltan ${dias} días`
+                  : `Vencido hace ${Math.abs(
+                      dias
+                    )} días`}
+              </Typography>
+            )}
+          </Box>
+
+          <Box
+            sx={{
+              minWidth: {
+                md: 280,
+              },
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+              }}
+            >
+              <Typography
+                color="text.secondary"
+                fontSize={12}
+              >
+                Reservado
+              </Typography>
+
+              <Typography
+                fontWeight={800}
+                fontSize={12}
+              >
+                {Math.round(
+                  porcentaje
+                )}
+                %
+              </Typography>
+            </Box>
+
+            <LinearProgress
+              variant="determinate"
+              value={
+                porcentaje
+              }
+              sx={{
+                mt: 1,
+                height: 9,
+                borderRadius: 9,
+              }}
+            />
+
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                mt: 1.5,
+              }}
+            >
+              <Typography
+                fontSize={12}
+                color="text.secondary"
+              >
+                {formatearDinero(
+                  apartado.ahorrado
+                )}
+              </Typography>
+
+              <Typography
+                fontSize={12}
+                color="text.secondary"
+              >
+                {formatearDinero(
+                  apartado.montoObjetivo
+                )}
+              </Typography>
+            </Box>
+
+            {pendiente > 0 &&
+              apartado.activo !==
+                false && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    p: 1.5,
+                    borderRadius:
+                      "14px",
+                    backgroundColor:
+                      "#F7F6FF",
+                  }}
+                >
+                  <Typography
+                    color="text.secondary"
+                    fontSize={11}
+                  >
+                    RESERVA SUGERIDA
+                  </Typography>
+
+                  <Typography
+                    fontWeight={900}
+                  >
+                    {formatearDinero(
+                      semanal
+                    )}{" "}
+                    / semana
+                  </Typography>
+                </Box>
+              )}
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Resumen({
+  titulo,
+  valor,
+}) {
+  return (
+    <Card
+      sx={{
+        borderRadius: "20px",
+      }}
+    >
+      <CardContent>
         <Typography
           color="text.secondary"
           fontSize={13}
-          sx={{ mt: 1 }}
         >
           {titulo}
         </Typography>
 
         <Typography
           sx={{
-            mt: 0.5,
+            mt: 0.7,
+            fontSize: 21,
             fontWeight: 900,
-            fontSize: 23,
           }}
         >
           {formatearDinero(
@@ -735,27 +896,5 @@ function ResumenCard({
         </Typography>
       </CardContent>
     </Card>
-  );
-}
-
-function Dato({
-  titulo,
-  valor,
-}) {
-  return (
-    <Box>
-      <Typography
-        color="text.secondary"
-        fontSize={12}
-      >
-        {titulo}
-      </Typography>
-
-      <Typography
-        fontWeight={700}
-      >
-        {valor}
-      </Typography>
-    </Box>
   );
 }
